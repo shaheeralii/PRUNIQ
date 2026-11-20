@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Frontend build output
+dist/
+
+# Rust / Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# Ignore all text files
+*.txt
+
+# Ignore all PowerShell scripts
+*.ps1
+
+# OS & editor artifacts
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+*.log
