@@ -12,6 +12,9 @@ pub enum AdtError {
     #[error("Invalid device serial: {reason}")]
     InvalidDeviceSerial { reason: String },
 
+    #[error("Invalid Android package identifier: {reason}")]
+    InvalidPackageName { reason: String },
+
     #[error("Device '{serial}' was not found in the list of connected devices.")]
     DeviceNotFound { serial: String },
 
@@ -61,6 +64,7 @@ impl AdtError {
             Self::AdbNotFound => "adb_not_found",
             Self::InvalidAdbPath { .. } => "invalid_adb_path",
             Self::InvalidDeviceSerial { .. } => "invalid_device_serial",
+            Self::InvalidPackageName { .. } => "invalid_package_name",
             Self::DeviceNotFound { .. } => "device_not_found",
             Self::DeviceUnauthorized { .. } => "device_unauthorized",
             Self::DeviceOffline { .. } => "device_offline",
@@ -82,6 +86,9 @@ impl AdtError {
             Self::InvalidAdbPath { .. } => Some(
                 "Verify the path points directly to the adb executable file (for example, C:\\platform-tools\\adb.exe).",
             ),
+            Self::InvalidPackageName { .. } => Some(
+                "Provide a valid Android package identifier such as com.example.app or android.",
+            ),
             Self::DeviceNotFound { .. } => Some(
                 "Refresh the device list and ensure USB debugging is enabled and the cable is connected.",
             ),
@@ -102,6 +109,16 @@ impl AdtError {
             ),
             _ => None,
         }
+    }
+
+    pub const fn is_connection_loss(&self) -> bool {
+        matches!(
+            self,
+            Self::DeviceDisconnected { .. }
+                | Self::DeviceOffline { .. }
+                | Self::DeviceUnauthorized { .. }
+                | Self::DeviceNoPermissions { .. }
+        )
     }
 }
 

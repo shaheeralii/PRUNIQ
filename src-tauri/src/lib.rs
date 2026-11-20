@@ -2,6 +2,7 @@ pub mod adb;
 pub mod android;
 pub mod commands;
 pub mod core;
+pub mod packages;
 
 use std::path::PathBuf;
 use std::sync::RwLock;
@@ -45,6 +46,10 @@ pub fn run() {
             commands::adb::detect_adb,
             commands::adb::list_devices,
             commands::adb::get_basic_device_info,
+            commands::device::get_device_specs,
+            commands::device::get_device_capabilities,
+            commands::packages::scan_installed_packages,
+            commands::packages::inspect_package_details,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Android Debloating Toolkit");

@@ -1,7 +1,7 @@
-use crate::adb::validation::validate_device_serial;
+use crate::adb::validation::{validate_device_serial, validate_package_name};
 use crate::core::errors::AdtError;
 
-/// Closed allow-list of Android system properties permitted in Phase 1.
+/// Closed allow-list of single Android system properties permitted for targeted `getprop`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AllowedDeviceProperty {
     Manufacturer,
@@ -21,7 +21,29 @@ impl AllowedDeviceProperty {
     }
 }
 
-/// Closed, strictly read-only allow-list of ADB commands permitted in Phase 1.
+/// Strictly typed filter flags for `pm list packages`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackageListFilter {
+    All,
+    System,
+    ThirdParty,
+    Enabled,
+    Disabled,
+}
+
+impl PackageListFilter {
+    pub const fn flag(self) -> Option<&'static str> {
+        match self {
+            Self::All => None,
+            Self::System => Some("-s"),
+            Self::ThirdParty => Some("-3"),
+            Self::Enabled => Some("-e"),
+            Self::Disabled => Some("-d"),
+        }
+    }
+}
+
+/// Closed, strictly read-only allow-list of ADB commands permitted in Phases 1 and 2.
 /// No mutating operations or arbitrary shell strings can be constructed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdbReadOnlyCommand {
@@ -31,10 +53,81 @@ pub enum AdbReadOnlyCommand {
         serial: String,
         property: AllowedDeviceProperty,
     },
+    GetAllProps {
+        serial: String,
+    },
+    ReadProcMeminfo {
+        serial: String,
+    },
+    ReadProcCpuinfo {
+        serial: String,
+    },
+    DataStorageDf {
+        serial: String,
+    },
+    WindowSize {
+        serial: String,
+    },
+    WindowDensity {
+        serial: String,
+    },
+    BatteryDumpsys {
+        serial: String,
+    },
+    KernelVersion {
+        serial: String,
+    },
+    PmHelp {
+        serial: String,
+    },
+    CmdPackageHelp {
+        serial: String,
+    },
+    AmHelp {
+        serial: String,
+    },
+    AmGetCurrentUser {
+        serial: String,
+    },
+    PmListUsers {
+        serial: String,
+    },
+    PmListPackages {
+        serial: String,
+        filter: PackageListFilter,
+        include_paths: bool,
+        user_id: Option<u32>,
+    },
+    DumpsysPackage {
+        serial: String,
+        package_name: String,
+    },
 }
 
 impl AdbReadOnlyCommand {
-    /// Human-readable label for logs and structured errors (never leaks sensitive payloads).
+    pub fn target_serial(&self) -> Option<&str> {
+        match self {
+            Self::Version | Self::DevicesLong => None,
+            Self::GetProp { serial, .. }
+            | Self::GetAllProps { serial }
+            | Self::ReadProcMeminfo { serial }
+            | Self::ReadProcCpuinfo { serial }
+            | Self::DataStorageDf { serial }
+            | Self::WindowSize { serial }
+            | Self::WindowDensity { serial }
+            | Self::BatteryDumpsys { serial }
+            | Self::KernelVersion { serial }
+            | Self::PmHelp { serial }
+            | Self::CmdPackageHelp { serial }
+            | Self::AmHelp { serial }
+            | Self::AmGetCurrentUser { serial }
+            | Self::PmListUsers { serial }
+            | Self::PmListPackages { serial, .. }
+            | Self::DumpsysPackage { serial, .. } => Some(serial.as_str()),
+        }
+    }
+
+    /// Human-readable label for logs and structured errors (never leaks raw serials).
     pub const fn label(&self) -> &'static str {
         match self {
             Self::Version => "adb version",
@@ -47,26 +140,94 @@ impl AdbReadOnlyCommand {
                 }
                 AllowedDeviceProperty::ApiLevel => "adb shell getprop ro.build.version.sdk",
             },
+            Self::GetAllProps { .. } => "adb shell getprop",
+            Self::ReadProcMeminfo { .. } => "adb shell cat /proc/meminfo",
+            Self::ReadProcCpuinfo { .. } => "adb shell cat /proc/cpuinfo",
+            Self::DataStorageDf { .. } => "adb shell df -k /data",
+            Self::WindowSize { .. } => "adb shell wm size",
+            Self::WindowDensity { .. } => "adb shell wm density",
+            Self::BatteryDumpsys { .. } => "adb shell dumpsys battery",
+            Self::KernelVersion { .. } => "adb shell uname -r",
+            Self::PmHelp { .. } => "adb shell pm help",
+            Self::CmdPackageHelp { .. } => "adb shell cmd package help",
+            Self::AmHelp { .. } => "adb shell am help",
+            Self::AmGetCurrentUser { .. } => "adb shell am get-current-user",
+            Self::PmListUsers { .. } => "adb shell pm list users",
+            Self::PmListPackages { .. } => "adb shell pm list packages",
+            Self::DumpsysPackage { .. } => "adb shell dumpsys package",
         }
     }
 
     /// Builds argv entries directly for process spawning without shell interpolation.
     pub fn build_args(&self) -> Result<Vec<String>, AdtError> {
+        if let Some(serial) = self.target_serial() {
+            validate_device_serial(serial)?;
+        }
+
         match self {
             Self::Version => Ok(vec!["version".to_string()]),
             Self::DevicesLong => Ok(vec!["devices".to_string(), "-l".to_string()]),
-            Self::GetProp { serial, property } => {
-                validate_device_serial(serial)?;
-                Ok(vec![
-                    "-s".to_string(),
-                    serial.clone(),
-                    "shell".to_string(),
-                    "getprop".to_string(),
-                    property.prop_key().to_string(),
-                ])
+            Self::GetProp { serial, property } => Ok(vec![
+                "-s".to_string(),
+                serial.clone(),
+                "shell".to_string(),
+                "getprop".to_string(),
+                property.prop_key().to_string(),
+            ]),
+            Self::GetAllProps { serial } => Ok(shell_args(serial, &["getprop"])),
+            Self::ReadProcMeminfo { serial } => Ok(shell_args(serial, &["cat", "/proc/meminfo"])),
+            Self::ReadProcCpuinfo { serial } => Ok(shell_args(serial, &["cat", "/proc/cpuinfo"])),
+            Self::DataStorageDf { serial } => Ok(shell_args(serial, &["df", "-k", "/data"])),
+            Self::WindowSize { serial } => Ok(shell_args(serial, &["wm", "size"])),
+            Self::WindowDensity { serial } => Ok(shell_args(serial, &["wm", "density"])),
+            Self::BatteryDumpsys { serial } => Ok(shell_args(serial, &["dumpsys", "battery"])),
+            Self::KernelVersion { serial } => Ok(shell_args(serial, &["uname", "-r"])),
+            Self::PmHelp { serial } => Ok(shell_args(serial, &["pm", "help"])),
+            Self::CmdPackageHelp { serial } => Ok(shell_args(serial, &["cmd", "package", "help"])),
+            Self::AmHelp { serial } => Ok(shell_args(serial, &["am", "help"])),
+            Self::AmGetCurrentUser { serial } => {
+                Ok(shell_args(serial, &["am", "get-current-user"]))
+            }
+            Self::PmListUsers { serial } => Ok(shell_args(serial, &["pm", "list", "users"])),
+            Self::PmListPackages {
+                serial,
+                filter,
+                include_paths,
+                user_id,
+            } => {
+                let mut args = shell_args(serial, &["pm", "list", "packages"]);
+                if *include_paths {
+                    args.push("-f".to_string());
+                }
+                if let Some(flag) = filter.flag() {
+                    args.push(flag.to_string());
+                }
+                if let Some(uid) = user_id {
+                    args.push("--user".to_string());
+                    args.push(uid.to_string());
+                }
+                Ok(args)
+            }
+            Self::DumpsysPackage {
+                serial,
+                package_name,
+            } => {
+                validate_package_name(package_name)?;
+                Ok(shell_args(serial, &["dumpsys", "package", package_name]))
             }
         }
     }
+}
+
+fn shell_args(serial: &str, tail: &[&str]) -> Vec<String> {
+    let mut args = Vec::with_capacity(3 + tail.len());
+    args.push("-s".to_string());
+    args.push(serial.to_string());
+    args.push("shell".to_string());
+    for part in tail {
+        args.push((*part).to_string());
+    }
+    args
 }
 
 #[cfg(test)]
@@ -109,14 +270,46 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_serial_before_building_getprop_args() {
-        let cmd = AdbReadOnlyCommand::GetProp {
+    fn builds_pm_list_packages_and_dumpsys_args_safely() {
+        let list_cmd = AdbReadOnlyCommand::PmListPackages {
+            serial: "DEV01".to_string(),
+            filter: PackageListFilter::System,
+            include_paths: true,
+            user_id: Some(0),
+        };
+        assert_eq!(
+            list_cmd.build_args().expect("list packages args"),
+            vec!["-s", "DEV01", "shell", "pm", "list", "packages", "-f", "-s", "--user", "0"]
+        );
+
+        let dump_cmd = AdbReadOnlyCommand::DumpsysPackage {
+            serial: "DEV01".to_string(),
+            package_name: "android".to_string(),
+        };
+        assert_eq!(
+            dump_cmd.build_args().expect("dumpsys args"),
+            vec!["-s", "DEV01", "shell", "dumpsys", "package", "android"]
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_serial_and_invalid_package_name() {
+        let bad_serial = AdbReadOnlyCommand::GetProp {
             serial: "bad serial".to_string(),
             property: AllowedDeviceProperty::Model,
         };
         assert!(matches!(
-            cmd.build_args(),
+            bad_serial.build_args(),
             Err(AdtError::InvalidDeviceSerial { .. })
+        ));
+
+        let bad_pkg = AdbReadOnlyCommand::DumpsysPackage {
+            serial: "DEV01".to_string(),
+            package_name: "com.bad;reboot".to_string(),
+        };
+        assert!(matches!(
+            bad_pkg.build_args(),
+            Err(AdtError::InvalidPackageName { .. })
         ));
     }
 }

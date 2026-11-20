@@ -9,8 +9,9 @@ use crate::core::errors::AdtError;
 use crate::core::models::{AdbDevice, AdbVersionInfo};
 
 pub const DEFAULT_ADB_TIMEOUT: Duration = Duration::from_secs(10);
+pub const BULK_SCAN_ADB_TIMEOUT: Duration = Duration::from_secs(25);
 
-/// Stateless, read-only Phase 1 ADB service generic over `ProcessRunner`.
+/// Stateless, read-only ADB service generic over `ProcessRunner`.
 pub struct AdbService<R: ProcessRunner> {
     runner: R,
     timeout: Duration,
@@ -37,10 +38,20 @@ impl<R: ProcessRunner> AdbService<R> {
         adb_path: &Path,
         command: &AdbReadOnlyCommand,
     ) -> Result<ProcessOutput, AdtError> {
+        self.execute_read_only_with_timeout(adb_path, command, self.timeout)
+            .await
+    }
+
+    pub async fn execute_read_only_with_timeout(
+        &self,
+        adb_path: &Path,
+        command: &AdbReadOnlyCommand,
+        timeout: Duration,
+    ) -> Result<ProcessOutput, AdtError> {
         let args = command.build_args()?;
         let output = self
             .runner
-            .run(adb_path, &args, command.label(), self.timeout)
+            .run(adb_path, &args, command.label(), timeout)
             .await?;
 
         if !output.success() {
@@ -69,20 +80,20 @@ fn classify_process_failure(command: &AdbReadOnlyCommand, output: &ProcessOutput
     let stderr_trimmed = output.stderr.trim();
     let stderr_lower = stderr_trimmed.to_ascii_lowercase();
 
-    if let AdbReadOnlyCommand::GetProp { serial, .. } = command {
+    if let Some(serial) = command.target_serial() {
         if stderr_lower.contains("unauthorized") {
             return AdtError::DeviceUnauthorized {
-                serial: serial.clone(),
+                serial: serial.to_string(),
             };
         }
         if stderr_lower.contains("device offline") || stderr_lower.contains("offline") {
             return AdtError::DeviceOffline {
-                serial: serial.clone(),
+                serial: serial.to_string(),
             };
         }
         if stderr_lower.contains("not found") || stderr_lower.contains("closed") {
             return AdtError::DeviceDisconnected {
-                serial: serial.clone(),
+                serial: serial.to_string(),
             };
         }
     }

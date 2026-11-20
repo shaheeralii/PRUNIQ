@@ -87,8 +87,19 @@ pub async fn get_basic_device_info(
     serial: String,
     state: State<'_, AppState>,
 ) -> Result<BasicDeviceInfo, AdtError> {
-    validate_device_serial(&serial)?;
-    let adb_path = resolve_cached_or_path_adb(&state)?;
+    let (adb_path, discovered_devices) = resolve_adb_and_recent_devices(&serial, &state).await?;
+    device_info::get_basic_device_info(&state.service, &adb_path, &serial, &discovered_devices)
+        .await
+}
+
+/// Shared helper for all device-scoped Phase 1 and Phase 2 commands:
+/// validates the opaque serial, resolves ADB, and ensures a fresh read-only device snapshot.
+pub(crate) async fn resolve_adb_and_recent_devices(
+    serial: &str,
+    state: &State<'_, AppState>,
+) -> Result<(PathBuf, Vec<AdbDevice>), AdtError> {
+    validate_device_serial(serial)?;
+    let adb_path = resolve_cached_or_path_adb(state)?;
 
     let recent_devices = {
         let cache = state.cache.read().unwrap_or_else(PoisonError::into_inner);
@@ -113,8 +124,7 @@ pub async fn get_basic_device_info(
         }
     };
 
-    device_info::get_basic_device_info(&state.service, &adb_path, &serial, &discovered_devices)
-        .await
+    Ok((adb_path, discovered_devices))
 }
 
 fn resolve_cached_or_path_adb(state: &State<'_, AppState>) -> Result<PathBuf, AdtError> {

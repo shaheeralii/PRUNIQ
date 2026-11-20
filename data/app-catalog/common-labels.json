@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "description": "Curated factual application labels for well-known Android system, Google, and OEM packages. Unknown packages always fall back honestly to their raw package identifier.",
+  "entries": [
+    { "packageName": "android", "label": "Android System" },
+    { "packageName": "com.android.systemui", "label": "System UI" },
+    { "packageName": "com.android.settings", "label": "Settings" },
+    { "packageName": "com.android.phone", "label": "Phone Services" },
+    { "packageName": "com.android.providers.telephony", "label": "Phone and Messaging Storage" },
+    { "packageName": "com.android.packageinstaller", "label": "Package Installer" },
+    { "packageName": "com.android.vending", "label": "Google Play Store" },
+    { "packageName": "com.google.android.gms", "label": "Google Play services" },
+    { "packageName": "com.google.android.gsf", "label": "Google Services Framework" },
+    { "packageName": "com.google.android.youtube", "label": "YouTube" },
+    { "packageName": "com.google.android.gm", "label": "Gmail" },
+    { "packageName": "com.google.android.apps.maps", "label": "Google Maps" },
+    { "packageName": "com.google.android.apps.photos", "label": "Google Photos" },
+    { "packageName": "com.google.android.inputmethod.latin", "label": "Gboard" },
+    { "packageName": "com.android.chrome", "label": "Google Chrome" },
+    { "packageName": "com.google.android.packageinstaller", "label": "Package Installer (Google)" },
+    { "packageName": "com.sec.android.app.launcher", "label": "One UI Home" },
+    { "packageName": "com.samsung.android.bixby.agent", "label": "Bixby Voice" },
+    { "packageName": "com.samsung.android.game.gos", "label": "Game Optimizing Service" },
+    { "packageName": "com.miui.home", "label": "MIUI System Launcher" },
+    { "packageName": "com.miui.msa.global", "label": "MIUI System Ads (msa)" },
+    { "packageName": "com.facebook.katana", "label": "Facebook" },
+    { "packageName": "com.facebook.appmanager", "label": "Meta App Manager" },
+    { "packageName": "com.facebook.services", "label": "Meta Services" },
+    { "packageName": "com.facebook.system", "label": "Meta App Installer" }
+  ]
+}

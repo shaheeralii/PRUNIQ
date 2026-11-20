@@ -3,6 +3,9 @@ use crate::core::errors::AdtError;
 /// Upper bound on opaque ADB serial length (covers USB serials, IP:port, and mDNS service names).
 pub const MAX_SERIAL_LEN: usize = 256;
 
+/// Upper bound on Android package identifier length.
+pub const MAX_PACKAGE_NAME_LEN: usize = 255;
+
 /// Validates an ADB device serial as an opaque identifier:
 /// - Must be non-empty.
 /// - Must not exceed `MAX_SERIAL_LEN` bytes.
@@ -25,6 +28,60 @@ pub fn validate_device_serial(serial: &str) -> Result<(), AdtError> {
     if serial.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err(AdtError::InvalidDeviceSerial {
             reason: "device serial must not contain whitespace or control characters".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+/// Hand-written validation for Android package identifiers without regex.
+/// Explicitly accepts the special core framework identifier `android`.
+pub fn validate_package_name(package_name: &str) -> Result<(), AdtError> {
+    if package_name.is_empty() {
+        return Err(AdtError::InvalidPackageName {
+            reason: "package identifier must not be empty".to_string(),
+        });
+    }
+
+    if package_name.len() > MAX_PACKAGE_NAME_LEN {
+        return Err(AdtError::InvalidPackageName {
+            reason: format!(
+                "package identifier exceeds maximum length of {MAX_PACKAGE_NAME_LEN} bytes"
+            ),
+        });
+    }
+
+    if package_name == "android" {
+        return Ok(());
+    }
+
+    let mut segment_count = 0usize;
+    for segment in package_name.split('.') {
+        segment_count += 1;
+        let mut chars = segment.chars();
+        let Some(first) = chars.next() else {
+            return Err(AdtError::InvalidPackageName {
+                reason: "package identifier contains an empty dot-separated segment".to_string(),
+            });
+        };
+
+        if !(first.is_ascii_alphabetic() || first == '_') {
+            return Err(AdtError::InvalidPackageName {
+                reason: "each segment must start with an ASCII letter or underscore".to_string(),
+            });
+        }
+
+        if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err(AdtError::InvalidPackageName {
+                reason: "segments may only contain ASCII letters, digits, and underscores"
+                    .to_string(),
+            });
+        }
+    }
+
+    if segment_count < 2 {
+        return Err(AdtError::InvalidPackageName {
+            reason: "package identifier must have at least two dot-separated segments (except 'android')".to_string(),
         });
     }
 
@@ -97,6 +154,48 @@ mod tests {
                     Err(AdtError::InvalidDeviceSerial { .. })
                 ),
                 "expected serial '{serial:?}' to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_special_android_and_standard_package_names() {
+        let valid = [
+            "android",
+            "com.android.systemui",
+            "com.google.android.gms",
+            "com.sec.android.app.launcher",
+            "org.example._internal.app_2",
+        ];
+        for pkg in valid {
+            assert!(
+                validate_package_name(pkg).is_ok(),
+                "expected package '{pkg}' to be valid"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_or_injected_package_names() {
+        let invalid = [
+            "",
+            "singleword",
+            "com..empty",
+            ".leading.dot",
+            "trailing.dot.",
+            "com.example.app;rm -rf /",
+            "com.example.app --user 0",
+            "-flag.like",
+            "com.123numericstart.app",
+            "com.example.dash-name",
+        ];
+        for pkg in invalid {
+            assert!(
+                matches!(
+                    validate_package_name(pkg),
+                    Err(AdtError::InvalidPackageName { .. })
+                ),
+                "expected package '{pkg}' to be rejected"
             );
         }
     }
