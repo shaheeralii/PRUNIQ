@@ -1,0 +1,6 @@
+USER           PID  PPID        VSZ    RSS WCHAN            ADDR S NAME
+root             1     0   10834120   5120 0                   0 S init
+root            42     2          0      0 0                   0 S [kworker/0:1]
+system        1520   812   18423100 245000 0                   0 S system_server
+u0_a145       4120   812   14210000 112500 0                   0 S com.example.backgroundapp
+u0_a180       4821   812   15423100 182400 0                   0 S com.android.chrome

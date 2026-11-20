@@ -1,0 +1,16 @@
+Applications Memory Usage (in Kilobytes):
+Uptime: 12345678 Realtime: 23456789
+
+Total PSS by process:
+    245,120K: system (pid 1520)
+    198,432K: com.android.systemui (pid 2104 / activities)
+    112,500K: com.example.backgroundapp (pid 4120)
+     84,210K: com.google.android.gms (pid 3412)
+
+Total PSS by OOM adjustment:
+    500,000K: Native
+
+Total RAM: 5,734,400K (status normal)
+ Free RAM: 2,410,100K (  420,000K cached pss + 1,680,100K cached kernel +   310,000K free)
+ Used RAM: 2,980,200K (2,650,000K used pss +   330,200K kernel)
+ Lost RAM:   344,100K

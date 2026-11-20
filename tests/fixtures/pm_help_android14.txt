@@ -1,0 +1,8 @@
+Package manager (package) commands:
+  list packages [-f] [-d] [-e] [-s] [-3] [--user USER_ID] [FILTER]
+  disable [--user USER_ID] PACKAGE_OR_COMPONENT
+  disable-user [--user USER_ID] PACKAGE_OR_COMPONENT
+  disable-until-used [--user USER_ID] PACKAGE_OR_COMPONENT
+  enable [--user USER_ID] PACKAGE_OR_COMPONENT
+  default-state [--user USER_ID] PACKAGE_OR_COMPONENT
+  install-existing [--user USER_ID] PACKAGE

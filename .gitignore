@@ -20,3 +20,9 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 *.log
+
+# Allow tracked Rust integration test fixtures despite *.txt rule
+!tests/fixtures/*.txt
+
+# Local script backups
+.adt-backup/

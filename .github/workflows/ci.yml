@@ -1,0 +1,287 @@
+name: CI & Windows Packaging Validation
+
+on:
+  push:
+    branches:
+      - main
+      - "phase-8/**"
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-checks:
+    name: Frontend (Typecheck, Vitest, Build)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify package-lock.json is tracked
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath "package-lock.json")) {
+            Write-Error "package-lock.json is missing. Run 'npm install' locally and commit package-lock.json."
+            exit 1
+          }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install frontend dependencies (reproducible)
+        run: npm ci
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Run frontend unit tests (Vitest)
+        run: npm run test
+
+      - name: Build frontend bundle
+        run: npm run build
+
+  rust-checks:
+    name: Rust (fmt, clippy, cargo test --locked)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Cargo.lock and configured Tauri icons exist
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath "src-tauri/Cargo.lock")) {
+            Write-Error "src-tauri/Cargo.lock is missing. Generate and commit Cargo.lock before running CI."
+            exit 1
+          }
+          $conf = Get-Content -LiteralPath "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          foreach ($icon in @($conf.bundle.icon)) {
+            $iconPath = Join-Path "src-tauri" $icon
+            if (-not (Test-Path -LiteralPath $iconPath)) {
+              Write-Error "Configured Tauri icon asset is missing: $iconPath"
+              exit 1
+            }
+          }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install frontend dependencies and build dist
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup Rust stable toolchain (rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+      - name: Run Clippy with warnings denied
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: Run Rust unit and mock integration tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+  windows-debug-build:
+    name: Windows Tauri Debug Build Validation
+    runs-on: windows-latest
+    needs: [frontend-checks, rust-checks]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install frontend dependencies (reproducible)
+        run: npm ci
+
+      - name: Verify locked local @tauri-apps/cli binary
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath "node_modules\.bin\tauri.cmd")) {
+            Write-Error "Local @tauri-apps/cli binary not found after npm ci."
+            exit 1
+          }
+          npm run tauri -- --version
+
+      - name: Verify every configured Tauri icon exists
+        shell: pwsh
+        run: |
+          $conf = Get-Content -LiteralPath "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          foreach ($icon in @($conf.bundle.icon)) {
+            $iconPath = Join-Path "src-tauri" $icon
+            if (-not (Test-Path -LiteralPath $iconPath)) {
+              Write-Error "Configured Tauri icon asset is missing: $iconPath"
+              exit 1
+            }
+          }
+
+      - name: Setup Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Tauri debug binary (no bundle)
+        run: npm run tauri -- build --debug --no-bundle -- --locked
+
+  windows-nsis-package:
+    name: Windows NSIS Installer Packaging (Artifact Only)
+    runs-on: windows-latest
+    needs: [frontend-checks, rust-checks]
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify every configured Tauri icon exists
+        shell: pwsh
+        run: |
+          $conf = Get-Content -LiteralPath "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          foreach ($icon in @($conf.bundle.icon)) {
+            $iconPath = Join-Path "src-tauri" $icon
+            if (-not (Test-Path -LiteralPath $iconPath)) {
+              Write-Error "Configured Tauri icon asset is missing: $iconPath"
+              exit 1
+            }
+          }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install frontend dependencies (reproducible)
+        run: npm ci
+
+      - name: Verify locked local @tauri-apps/cli binary
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath "node_modules\.bin\tauri.cmd")) {
+            Write-Error "Local @tauri-apps/cli binary not found after npm ci."
+            exit 1
+          }
+          npm run tauri -- --version
+
+      - name: Setup Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Windows NSIS installer
+        run: npm run tauri -- build --bundles nsis -- --locked
+
+      - name: Upload NSIS installer artifact for manual review
+        uses: actions/upload-artifact@v4
+        with:
+          name: pruniq-windows-x64-nsis
+          if-no-files-found: error
+          path: src-tauri/target/release/bundle/nsis/*.exe
+
+  windows-msi-package:
+    name: Windows MSI Installer Packaging (Artifact Only)
+    runs-on: windows-latest
+    needs: [frontend-checks, rust-checks]
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Windows MSI VBSCRIPT prerequisite (read-only)
+        shell: pwsh
+        run: |
+          $cap = Get-WindowsCapability -Online -Name "VBSCRIPT*" -ErrorAction SilentlyContinue
+          if ($cap) {
+            $cap | Format-Table Name, State -AutoSize
+            if (-not ($cap | Where-Object { $_.State -eq "Installed" })) {
+              Write-Error "Windows VBSCRIPT optional feature is not installed; WiX MSI bundling requires VBSCRIPT."
+              exit 1
+            }
+          } elseif (-not (Test-Path -LiteralPath "$env:WINDIR\System32\vbscript.dll")) {
+            Write-Error "vbscript.dll not found; WiX MSI bundling requires VBSCRIPT on Windows."
+            exit 1
+          } else {
+            Write-Host "vbscript.dll detected in System32."
+          }
+
+      - name: Verify every configured Tauri icon exists
+        shell: pwsh
+        run: |
+          $conf = Get-Content -LiteralPath "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          foreach ($icon in @($conf.bundle.icon)) {
+            $iconPath = Join-Path "src-tauri" $icon
+            if (-not (Test-Path -LiteralPath $iconPath)) {
+              Write-Error "Configured Tauri icon asset is missing: $iconPath"
+              exit 1
+            }
+          }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install frontend dependencies (reproducible)
+        run: npm ci
+
+      - name: Verify locked local @tauri-apps/cli binary
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath "node_modules\.bin\tauri.cmd")) {
+            Write-Error "Local @tauri-apps/cli binary not found after npm ci."
+            exit 1
+          }
+          npm run tauri -- --version
+
+      - name: Setup Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Windows MSI installer
+        run: npm run tauri -- build --bundles msi -- --locked
+
+      - name: Upload MSI installer artifact for manual review
+        uses: actions/upload-artifact@v4
+        with:
+          name: pruniq-windows-x64-msi
+          if-no-files-found: error
+          path: src-tauri/target/release/bundle/msi/*.msi

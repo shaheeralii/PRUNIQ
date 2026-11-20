@@ -1,8 +1,10 @@
 [package]
 name = "android-debloating-toolkit"
 version = "0.1.0"
-description = "Android Debloating Toolkit (ADT) - Local-first Android package management utility"
+description = "PRUNIQ — Android Debloating Toolkit (ADT) - Local-first Android package management utility"
 edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/shaheeralii/PRUNIQ.git"
 
 [lib]
 name = "adt_lib"

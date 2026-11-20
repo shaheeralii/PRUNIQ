@@ -1,0 +1,6 @@
+package:/system/framework/framework-res.apk=android
+package:/system/priv-app/SystemUI/SystemUI.apk=com.android.systemui
+package:/data/app/~~abc123==/com.google.android.youtube-xyz==/base.apk=com.google.android.youtube
+package:/system/priv-app/Bixby/Bixby.apk=com.samsung.android.bixby.agent
+package:/data/app/~~def456==/org.mozilla.firefox-uvw==/base.apk=org.mozilla.firefox
+package:/vendor/app/OemDiag/OemDiag.apk=com.vendor.oemdiag

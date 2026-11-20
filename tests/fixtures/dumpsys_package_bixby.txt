@@ -1,0 +1,7 @@
+Packages:
+  Package [com.samsung.android.bixby.agent] (987654):
+    codePath=/system/priv-app/Bixby
+    versionCode=320010 minSdk=31 targetSdk=34
+    versionName=3.2.10
+    pkgFlags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    User 0: ceDataInode=4242 installed=true hidden=false stopped=true enabled=3

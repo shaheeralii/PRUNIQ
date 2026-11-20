@@ -1,0 +1,6 @@
+Filesystem      1K-blocks     Used Available Use% Mounted on
+/dev/block/dm-0   3145728  2980000    165728  95% /
+/dev/block/dm-1   2097152  1920000    177152  92% /product
+/dev/block/dm-2   1572864  1410000    162864  90% /vendor
+/dev/block/dm-5 115343360 48234120  67109240  42% /data
+/dev/fuse       115343360 48234120  67109240  42% /storage/emulated

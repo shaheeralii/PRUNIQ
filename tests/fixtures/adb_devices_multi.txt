@@ -1,0 +1,6 @@
+List of devices attached
+R58M91234AB            device product:beyond1ltexx model:SM_G973F device:beyond1 transport_id:1
+192.168.1.42:5555      offline transport_id:2
+PIXEL8_UNAUTH          unauthorized usb:1-3 transport_id:3
+NO_PERM_01             no permissions (missing udev rules); see [http://developer.android.com/tools/device.html] usb:1-4 transport_id:4
+SECOND_AUTH_DEV        device product:a52sxq model:SM_A528B device:a52sxq transport_id:5
