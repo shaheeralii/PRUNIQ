@@ -38,7 +38,7 @@ export interface CapturedPackageState {
 
 export interface PackageStateSnapshot {
   snapshotId: string;
-  serial: string;
+  deviceId: string;
   userId: number;
   packageName: string;
   snapshotType: "initial_baseline" | "pre_operation";
@@ -122,7 +122,7 @@ export interface BulkOperationPreview {
 
 export interface PackageOperationResult {
   operationId: string;
-  serial: string;
+  deviceId: string;
   userId: number;
   packageName: string;
   action: PackageAction;
@@ -138,6 +138,7 @@ export interface PackageOperationResult {
 
 export interface BulkOperationResult {
   serial: string;
+  deviceId: string;
   userId: number;
   results: PackageOperationResult[];
   succeededCount: number;

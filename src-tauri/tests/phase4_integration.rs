@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::sync::RwLock;
 
 use adt_lib::adb::device_discovery::parse_devices_long;
 use adt_lib::adb::process_runner::mock::MockProcessRunner;
@@ -16,7 +15,7 @@ use adt_lib::operations::models::{
 };
 use adt_lib::operations::planner::preview_package_operations;
 use adt_lib::operations::protections::probe_device_protections;
-use adt_lib::operations::snapshots::SnapshotStore;
+use adt_lib::storage::db::Storage;
 
 fn ok_out(stdout: impl Into<String>) -> Result<ProcessOutput, AdtError> {
     Ok(ProcessOutput {
@@ -37,6 +36,14 @@ fn dumpsys_state(pkg: &str, enabled_code: i32) -> String {
     )
 }
 
+fn test_storage_and_device() -> (Storage, String) {
+    let storage = Storage::open_in_memory().expect("in-memory sqlite");
+    let dev = storage
+        .upsert_device_profile(None, Some("samsung"), Some("SM-A528B"), Some("a52sxq"), Some("14"), Some(34))
+        .expect("device profile");
+    (storage, dev.device_id)
+}
+
 #[tokio::test]
 async fn verified_disable_enable_and_exact_original_restoration_cycle() {
     let devices = sample_devices();
@@ -44,20 +51,16 @@ async fn verified_disable_enable_and_exact_original_restoration_cycle() {
     let adb = Path::new("adb.exe");
 
     let runner = MockProcessRunner::new(vec![
-        // Protection probes for Disable (4 read-only calls)
         ok_out("com.sec.android.app.launcher/.Launcher\n"),
         ok_out("com.sec.android.app.launcher/.Launcher\n"),
         ok_out("com.google.android.inputmethod.latin/.LatinIME\n"),
         ok_out("com.google.android.inputmethod.latin/.LatinIME\n"),
-        // 1. Disable: pre-state (DEFAULT=0) -> pm disable-user -> post-state (DISABLED_USER=3)
         ok_out(dumpsys_state(pkg, 0)),
         ok_out("Package com.example.bloat new state: disabled-user\n"),
         ok_out(dumpsys_state(pkg, 3)),
-        // 2. Enable: pre-state (3) -> pm enable -> post-state (ENABLED=1)
         ok_out(dumpsys_state(pkg, 3)),
         ok_out("Package com.example.bloat new state: enabled\n"),
         ok_out(dumpsys_state(pkg, 1)),
-        // 3. RestoreOriginalState (baseline was DEFAULT=0): pre-state (1) -> pm default-state -> post-state (0)
         ok_out(dumpsys_state(pkg, 1)),
         ok_out("Package com.example.bloat new state: default\n"),
         ok_out(dumpsys_state(pkg, 0)),
@@ -65,19 +68,19 @@ async fn verified_disable_enable_and_exact_original_restoration_cycle() {
 
     let service = AdbService::new(runner);
     let locks = DeviceLockManager::new();
-    let store = RwLock::new(SnapshotStore::new());
+    let (storage, device_id) = test_storage_and_device();
     let caps = CapabilityFlags {
         pm_default_state_supported: true,
         pm_disable_until_used_supported: true,
     };
 
-    // Disable
     let disable_res = execute_package_operations(
         &service,
         adb,
         &devices,
         &locks,
-        &store,
+        &storage,
+        &device_id,
         &ExecuteOperationsRequest {
             serial: "DEV01".to_string(),
             user_id: 0,
@@ -103,13 +106,13 @@ async fn verified_disable_enable_and_exact_original_restoration_cycle() {
         ConfiguredPackageState::DisabledUser
     );
 
-    // Enable
     let enable_res = execute_package_operations(
         &service,
         adb,
         &devices,
         &locks,
-        &store,
+        &storage,
+        &device_id,
         &ExecuteOperationsRequest {
             serial: "DEV01".to_string(),
             user_id: 0,
@@ -134,13 +137,13 @@ async fn verified_disable_enable_and_exact_original_restoration_cycle() {
         ConfiguredPackageState::Enabled
     );
 
-    // Restore Original State (should restore immutable baseline DEFAULT=0 via pm default-state)
     let restore_res = execute_package_operations(
         &service,
         adb,
         &devices,
         &locks,
-        &store,
+        &storage,
+        &device_id,
         &ExecuteOperationsRequest {
             serial: "DEV01".to_string(),
             user_id: 0,
@@ -177,12 +180,10 @@ async fn blocks_protected_packages_and_requires_explicit_confirmation() {
     let adb = Path::new("adb.exe");
 
     let runner = MockProcessRunner::new(vec![
-        // Protection probes for preview
         ok_out("com.sec.android.app.launcher/.Launcher\n"),
         ok_out("com.sec.android.app.launcher/.Launcher\n"),
         ok_out("com.google.android.inputmethod.latin/.LatinIME\n"),
         ok_out("com.google.android.inputmethod.latin/.LatinIME\n"),
-        // Protection probes for execute
         ok_out("com.sec.android.app.launcher/.Launcher\n"),
         ok_out("com.sec.android.app.launcher/.Launcher\n"),
         ok_out("com.google.android.inputmethod.latin/.LatinIME\n"),
@@ -191,19 +192,19 @@ async fn blocks_protected_packages_and_requires_explicit_confirmation() {
 
     let service = AdbService::new(runner);
     let locks = DeviceLockManager::new();
-    let store = RwLock::new(SnapshotStore::new());
+    let (storage, device_id) = test_storage_and_device();
     let caps = CapabilityFlags {
         pm_default_state_supported: false,
         pm_disable_until_used_supported: false,
     };
 
-    // Unconfirmed execution must be rejected immediately.
     let unconfirmed = execute_package_operations(
         &service,
         adb,
         &devices,
         &locks,
-        &store,
+        &storage,
+        &device_id,
         &ExecuteOperationsRequest {
             serial: "DEV01".to_string(),
             user_id: 0,
@@ -223,48 +224,47 @@ async fn blocks_protected_packages_and_requires_explicit_confirmation() {
     let profile = probe_device_protections(&service, adb, "DEV01", &devices)
         .await
         .expect("probe protections");
-    let preview = {
-        let guard = store.read().expect("read store");
-        preview_package_operations(
-            &PreviewOperationsRequest {
-                serial: "DEV01".to_string(),
-                user_id: 0,
-                items: vec![
-                    PackageActionRequest {
-                        package_name: "com.android.systemui".to_string(),
-                        action: PackageAction::Disable,
-                    },
-                    PackageActionRequest {
-                        package_name: "com.sec.android.app.launcher".to_string(),
-                        action: PackageAction::Disable,
-                    },
-                    PackageActionRequest {
-                        package_name: "com.google.android.inputmethod.latin".to_string(),
-                        action: PackageAction::Disable,
-                    },
-                    PackageActionRequest {
-                        package_name: "com.example.keep".to_string(),
-                        action: PackageAction::KeepCurrent,
-                    },
-                ],
-                capabilities: caps.clone(),
-            },
-            &profile,
-            &guard,
-        )
-        .expect("preview")
-    };
+    let preview = preview_package_operations(
+        &PreviewOperationsRequest {
+            serial: "DEV01".to_string(),
+            user_id: 0,
+            items: vec![
+                PackageActionRequest {
+                    package_name: "com.android.systemui".to_string(),
+                    action: PackageAction::Disable,
+                },
+                PackageActionRequest {
+                    package_name: "com.sec.android.app.launcher".to_string(),
+                    action: PackageAction::Disable,
+                },
+                PackageActionRequest {
+                    package_name: "com.google.android.inputmethod.latin".to_string(),
+                    action: PackageAction::Disable,
+                },
+                PackageActionRequest {
+                    package_name: "com.example.keep".to_string(),
+                    action: PackageAction::KeepCurrent,
+                },
+            ],
+            capabilities: caps.clone(),
+        },
+        &device_id,
+        &profile,
+        &storage,
+    )
+    .expect("preview");
+
     assert_eq!(preview.blocked_count, 3);
     assert_eq!(preview.noop_count, 1);
     assert_eq!(preview.executable_count, 0);
 
-    // Defense-in-depth: execute blocks all 3 and issues zero mutating ADB calls.
     let exec_res = execute_package_operations(
         &service,
         adb,
         &devices,
         &locks,
-        &store,
+        &storage,
+        &device_id,
         &ExecuteOperationsRequest {
             serial: "DEV01".to_string(),
             user_id: 0,
@@ -310,18 +310,15 @@ async fn timeout_marks_uncertain_without_retrying_and_verification_catches_silen
     let pkg_silent = "com.example.stubborn";
 
     let runner = MockProcessRunner::new(vec![
-        // Protection probes
         ok_out("com.sec.android.app.launcher/.Launcher\n"),
         ok_out("com.sec.android.app.launcher/.Launcher\n"),
         ok_out("com.google.android.inputmethod.latin/.LatinIME\n"),
         ok_out("com.google.android.inputmethod.latin/.LatinIME\n"),
-        // Item 1: pre-state -> timeout (must NOT retry!)
         ok_out(dumpsys_state(pkg_timeout, 0)),
         Err(AdtError::Timeout {
             command: "adb shell pm disable-user".to_string(),
             timeout_ms: 15_000,
         }),
-        // Item 2: pre-state -> exit 0 -> post-state STILL enabled (0) -> VerificationMismatch!
         ok_out(dumpsys_state(pkg_silent, 0)),
         ok_out("Success\n"),
         ok_out(dumpsys_state(pkg_silent, 0)),
@@ -329,14 +326,15 @@ async fn timeout_marks_uncertain_without_retrying_and_verification_catches_silen
 
     let service = AdbService::new(runner);
     let locks = DeviceLockManager::new();
-    let store = RwLock::new(SnapshotStore::new());
+    let (storage, device_id) = test_storage_and_device();
 
     let res = execute_package_operations(
         &service,
         adb,
         &devices,
         &locks,
-        &store,
+        &storage,
+        &device_id,
         &ExecuteOperationsRequest {
             serial: "DEV01".to_string(),
             user_id: 0,
@@ -370,8 +368,6 @@ async fn timeout_marks_uncertain_without_retrying_and_verification_catches_silen
         RestorationFidelity::Unverified
     );
     assert_eq!(res.results[1].status, OperationStatus::VerificationMismatch);
-
-    // Exactly 9 calls total -> zero retries occurred on timeout.
     assert_eq!(service.runner().invocations().len(), 9);
 }
 
@@ -382,11 +378,9 @@ async fn reports_effective_match_only_when_exact_restoration_is_not_supported() 
     let pkg = "com.example.oemdisabled";
 
     let runner = MockProcessRunner::new(vec![
-        // Enable package whose baseline is DISABLED (2): pre-state(2) -> pm enable -> post-state(1)
         ok_out(dumpsys_state(pkg, 2)),
         ok_out("Package com.example.oemdisabled new state: enabled\n"),
         ok_out(dumpsys_state(pkg, 1)),
-        // Restore original (2): pre-state(1) -> pm disable-user (since rootless cannot set 2) -> post-state(3)
         ok_out(dumpsys_state(pkg, 1)),
         ok_out("Package com.example.oemdisabled new state: disabled-user\n"),
         ok_out(dumpsys_state(pkg, 3)),
@@ -394,7 +388,7 @@ async fn reports_effective_match_only_when_exact_restoration_is_not_supported() 
 
     let service = AdbService::new(runner);
     let locks = DeviceLockManager::new();
-    let store = RwLock::new(SnapshotStore::new());
+    let (storage, device_id) = test_storage_and_device();
     let caps = CapabilityFlags {
         pm_default_state_supported: false,
         pm_disable_until_used_supported: false,
@@ -405,7 +399,8 @@ async fn reports_effective_match_only_when_exact_restoration_is_not_supported() 
         adb,
         &devices,
         &locks,
-        &store,
+        &storage,
+        &device_id,
         &ExecuteOperationsRequest {
             serial: "DEV01".to_string(),
             user_id: 0,
@@ -426,7 +421,8 @@ async fn reports_effective_match_only_when_exact_restoration_is_not_supported() 
         adb,
         &devices,
         &locks,
-        &store,
+        &storage,
+        &device_id,
         &ExecuteOperationsRequest {
             serial: "DEV01".to_string(),
             user_id: 0,

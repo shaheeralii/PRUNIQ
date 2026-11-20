@@ -5,14 +5,15 @@ use crate::operations::models::{
     PreviewOperationsRequest,
 };
 use crate::operations::protections::check_disable_protections;
-use crate::operations::snapshots::SnapshotStore;
+use crate::storage::db::Storage;
 
 /// Builds a deterministic, read-only preview of planned single or bulk package actions
-/// before the user explicitly confirms execution.
+/// backed by persisted SQLite snapshots before the user explicitly confirms execution.
 pub fn preview_package_operations(
     request: &PreviewOperationsRequest,
+    device_id: &str,
     profile: &DeviceProtectionProfile,
-    snapshots: &SnapshotStore,
+    storage: &Storage,
 ) -> Result<BulkOperationPreview, AdtError> {
     let mut planned = Vec::with_capacity(request.items.len());
     let mut executable_count = 0usize;
@@ -22,9 +23,9 @@ pub fn preview_package_operations(
     for item in &request.items {
         validate_package_name(&item.package_name)?;
 
-        let baseline = snapshots.get_baseline(&request.serial, request.user_id, &item.package_name);
+        let baseline = storage.get_baseline(device_id, request.user_id, &item.package_name)?;
         let pre_op =
-            snapshots.get_latest_pre_operation(&request.serial, request.user_id, &item.package_name);
+            storage.get_latest_pre_operation(device_id, request.user_id, &item.package_name)?;
 
         let mut blocked_reasons = Vec::new();
         let mut messages = Vec::new();

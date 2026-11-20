@@ -87,7 +87,7 @@ pub struct CapturedPackageState {
 #[serde(rename_all = "camelCase")]
 pub struct PackageStateSnapshot {
     pub snapshot_id: String,
-    pub serial: String,
+    pub device_id: String,
     pub user_id: u32,
     pub package_name: String,
     pub snapshot_type: SnapshotType,
@@ -193,7 +193,7 @@ pub struct BulkOperationPreview {
 #[serde(rename_all = "camelCase")]
 pub struct PackageOperationResult {
     pub operation_id: String,
-    pub serial: String,
+    pub device_id: String,
     pub user_id: u32,
     pub package_name: String,
     pub action: PackageAction,
@@ -211,6 +211,7 @@ pub struct PackageOperationResult {
 #[serde(rename_all = "camelCase")]
 pub struct BulkOperationResult {
     pub serial: String,
+    pub device_id: String,
     pub user_id: u32,
     pub results: Vec<PackageOperationResult>,
     pub succeeded_count: usize,

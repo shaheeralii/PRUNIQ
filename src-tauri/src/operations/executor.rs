@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::sync::{PoisonError, RwLock};
 
 use crate::adb::command_specs::{AdbMutatingCommand, AdbReadOnlyCommand, PackageListFilter};
 use crate::adb::device_discovery::verify_authorized_device;
@@ -10,6 +9,7 @@ use crate::android::parsers::packages::{parse_dumpsys_package, parse_pm_list_pac
 use crate::core::errors::AdtError;
 use crate::core::models::AdbDevice;
 use crate::core::package_models::{ConfiguredPackageState, EffectivePackageState};
+use crate::diagnostics::redaction::redact_text;
 use crate::operations::locks::DeviceLockManager;
 use crate::operations::models::{
     BulkOperationResult, CapabilityFlags, CapturedPackageState, ExecuteOperationsRequest,
@@ -17,7 +17,8 @@ use crate::operations::models::{
     RestorationFidelity,
 };
 use crate::operations::protections::{check_disable_protections, probe_device_protections};
-use crate::operations::snapshots::{next_id, now_epoch_ms, SnapshotStore};
+use crate::operations::snapshots::{next_id, now_epoch_ms};
+use crate::storage::db::Storage;
 
 struct ResolvedMutationPlan {
     command: AdbMutatingCommand,
@@ -27,19 +28,15 @@ struct ResolvedMutationPlan {
     limitation_note: Option<String>,
 }
 
-/// Executes confirmed single or bulk package operations under a per-device Tokio lock:
-/// 1. Validates explicit confirmation, device authorization, and package names.
-/// 2. Acquires exclusive per-device lock.
-/// 3. Probes live launcher/keyboard protections (defense-in-depth).
-/// 4. Captures baseline (if absent) + pre-operation snapshots before each mutation.
-/// 5. Executes allow-listed ADB command without auto-retry on timeout.
-/// 6. Re-reads live device state via read-only `dumpsys package` to verify actual outcome.
+/// Executes confirmed single or bulk package operations under a per-device Tokio lock,
+/// persisting immutable baselines, pre-operation snapshots, and sanitized history to SQLite.
 pub async fn execute_package_operations<R: ProcessRunner>(
     service: &AdbService<R>,
     adb_path: &Path,
     discovered_devices: &[AdbDevice],
     lock_manager: &DeviceLockManager,
-    snapshot_store: &RwLock<SnapshotStore>,
+    storage: &Storage,
+    device_id: &str,
     request: &ExecuteOperationsRequest,
 ) -> Result<BulkOperationResult, AdtError> {
     if !request.confirmed {
@@ -48,6 +45,7 @@ pub async fn execute_package_operations<R: ProcessRunner>(
 
     let verified = verify_authorized_device(&request.serial, discovered_devices)?;
     let target_serial = verified.serial.clone();
+    let redact_serials = vec![target_serial.clone()];
 
     for item in &request.items {
         validate_package_name(&item.package_name)?;
@@ -83,7 +81,7 @@ pub async fn execute_package_operations<R: ProcessRunner>(
             noop_count += 1;
             let res = PackageOperationResult {
                 operation_id: op_id,
-                serial: target_serial.clone(),
+                device_id: device_id.to_string(),
                 user_id: request.user_id,
                 package_name: item.package_name.clone(),
                 action: item.action,
@@ -96,7 +94,7 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                 error_message: None,
                 executed_at_ms: now_epoch_ms(),
             };
-            record_result(snapshot_store, &res);
+            storage.record_operation_result(&res, None)?;
             results.push(res);
             continue;
         }
@@ -108,7 +106,7 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                     blocked_count += 1;
                     let res = PackageOperationResult {
                         operation_id: op_id,
-                        serial: target_serial.clone(),
+                        device_id: device_id.to_string(),
                         user_id: request.user_id,
                         package_name: item.package_name.clone(),
                         action: item.action,
@@ -123,7 +121,7 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                         ),
                         executed_at_ms: now_epoch_ms(),
                     };
-                    record_result(snapshot_store, &res);
+                    storage.record_operation_result(&res, Some("blocked"))?;
                     results.push(res);
                     continue;
                 }
@@ -132,16 +130,10 @@ pub async fn execute_package_operations<R: ProcessRunner>(
 
         let target_snapshot_opt: Option<PackageStateSnapshot> = match item.action {
             PackageAction::RestoreOriginalState => {
-                let store = snapshot_store
-                    .read()
-                    .unwrap_or_else(PoisonError::into_inner);
-                store.get_baseline(&target_serial, request.user_id, &item.package_name)
+                storage.get_baseline(device_id, request.user_id, &item.package_name)?
             }
             PackageAction::UndoLast => {
-                let store = snapshot_store
-                    .read()
-                    .unwrap_or_else(PoisonError::into_inner);
-                store.get_latest_pre_operation(&target_serial, request.user_id, &item.package_name)
+                storage.get_latest_pre_operation(device_id, request.user_id, &item.package_name)?
             }
             _ => None,
         };
@@ -159,7 +151,7 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                 failed_count += 1;
                 let res = PackageOperationResult {
                     operation_id: op_id,
-                    serial: target_serial.clone(),
+                    device_id: device_id.to_string(),
                     user_id: request.user_id,
                     package_name: item.package_name.clone(),
                     action: item.action,
@@ -172,13 +164,14 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                     error_message: Some(reason),
                     executed_at_ms: now_epoch_ms(),
                 };
-                record_result(snapshot_store, &res);
+                storage.record_operation_result(&res, None)?;
                 results.push(res);
                 continue;
             }
         };
 
-        // Capture live state immediately before modification.
+        let target_label = target_state_token(plan.expected_effective, plan.expected_configured);
+
         let previous_state = match capture_live_package_state(
             service,
             adb_path,
@@ -191,10 +184,10 @@ pub async fn execute_package_operations<R: ProcessRunner>(
             Ok(state) => state,
             Err(err) if err.is_connection_loss() => {
                 failed_count += 1;
-                let msg = err.to_string();
+                let sanitized = redact_text(&err.to_string(), &redact_serials);
                 let res = PackageOperationResult {
                     operation_id: op_id,
-                    serial: target_serial.clone(),
+                    device_id: device_id.to_string(),
                     user_id: request.user_id,
                     package_name: item.package_name.clone(),
                     action: item.action,
@@ -204,21 +197,22 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                     restoration_fidelity: RestorationFidelity::Failed,
                     blocked_reasons: Vec::new(),
                     limitation_note: None,
-                    error_message: Some(msg.clone()),
+                    error_message: Some(sanitized.clone()),
                     executed_at_ms: now_epoch_ms(),
                 };
-                record_result(snapshot_store, &res);
+                storage.record_operation_result(&res, Some(&target_label))?;
                 results.push(res);
                 aborted_early_reason = Some(format!(
-                    "Aborted remaining items after connection loss: {msg}"
+                    "Aborted remaining items after connection loss: {sanitized}"
                 ));
                 break;
             }
             Err(err) => {
                 failed_count += 1;
+                let sanitized = redact_text(&err.to_string(), &redact_serials);
                 let res = PackageOperationResult {
                     operation_id: op_id,
-                    serial: target_serial.clone(),
+                    device_id: device_id.to_string(),
                     user_id: request.user_id,
                     package_name: item.package_name.clone(),
                     action: item.action,
@@ -228,37 +222,33 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                     restoration_fidelity: RestorationFidelity::Failed,
                     blocked_reasons: Vec::new(),
                     limitation_note: None,
-                    error_message: Some(format!("Failed to capture pre-operation state: {err}")),
+                    error_message: Some(format!(
+                        "Failed to capture pre-operation state: {sanitized}"
+                    )),
                     executed_at_ms: now_epoch_ms(),
                 };
-                record_result(snapshot_store, &res);
+                storage.record_operation_result(&res, Some(&target_label))?;
                 results.push(res);
                 continue;
             }
         };
 
-        // Record immutable baseline (if first modification) and pre-operation snapshot.
-        {
-            let mut store = snapshot_store
-                .write()
-                .unwrap_or_else(PoisonError::into_inner);
-            store.capture_baseline_if_absent(
-                &target_serial,
-                request.user_id,
-                &item.package_name,
-                &previous_state,
-                request.android_version.as_deref(),
-            );
-            store.record_pre_operation(
-                &target_serial,
-                request.user_id,
-                &item.package_name,
-                &previous_state,
-                request.android_version.as_deref(),
-            );
-        }
+        // Persist immutable baseline (if absent) and pre-operation snapshot to SQLite.
+        storage.capture_baseline_if_absent(
+            device_id,
+            request.user_id,
+            &item.package_name,
+            &previous_state,
+            request.android_version.as_deref(),
+        )?;
+        storage.record_pre_operation(
+            device_id,
+            request.user_id,
+            &item.package_name,
+            &previous_state,
+            request.android_version.as_deref(),
+        )?;
 
-        // Execute mutating ADB command (never auto-retry on timeout).
         match service.execute_mutating(adb_path, &plan.command).await {
             Ok(_) => {}
             Err(AdtError::Timeout {
@@ -268,7 +258,7 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                 uncertain_count += 1;
                 let res = PackageOperationResult {
                     operation_id: op_id,
-                    serial: target_serial.clone(),
+                    device_id: device_id.to_string(),
                     user_id: request.user_id,
                     package_name: item.package_name.clone(),
                     action: item.action,
@@ -278,7 +268,7 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                     restoration_fidelity: RestorationFidelity::Unverified,
                     blocked_reasons: Vec::new(),
                     limitation_note: Some(
-                        "Timed out waiting for local ADB client. The device may still have applied the change; refresh and inspect actual package state before retrying."
+                        "Timed out waiting for local ADB client. The device may still have applied the change; use Verify Live State in History & Recovery before retrying."
                             .to_string(),
                     ),
                     error_message: Some(format!(
@@ -286,16 +276,16 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                     )),
                     executed_at_ms: now_epoch_ms(),
                 };
-                record_result(snapshot_store, &res);
+                storage.record_operation_result(&res, Some(&target_label))?;
                 results.push(res);
                 continue;
             }
             Err(err) if err.is_connection_loss() => {
                 uncertain_count += 1;
-                let msg = err.to_string();
+                let sanitized = redact_text(&err.to_string(), &redact_serials);
                 let res = PackageOperationResult {
                     operation_id: op_id,
-                    serial: target_serial.clone(),
+                    device_id: device_id.to_string(),
                     user_id: request.user_id,
                     package_name: item.package_name.clone(),
                     action: item.action,
@@ -305,24 +295,25 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                     restoration_fidelity: RestorationFidelity::Unverified,
                     blocked_reasons: Vec::new(),
                     limitation_note: Some(
-                        "Device disconnected while command was in flight. Reconnect and verify actual package state."
+                        "Device disconnected while command was in flight. Reconnect and run Verify Live State in History & Recovery."
                             .to_string(),
                     ),
-                    error_message: Some(msg.clone()),
+                    error_message: Some(sanitized.clone()),
                     executed_at_ms: now_epoch_ms(),
                 };
-                record_result(snapshot_store, &res);
+                storage.record_operation_result(&res, Some(&target_label))?;
                 results.push(res);
                 aborted_early_reason = Some(format!(
-                    "Aborted remaining items after connection loss: {msg}"
+                    "Aborted remaining items after connection loss: {sanitized}"
                 ));
                 break;
             }
             Err(err) => {
                 failed_count += 1;
+                let sanitized = redact_text(&err.to_string(), &redact_serials);
                 let res = PackageOperationResult {
                     operation_id: op_id,
-                    serial: target_serial.clone(),
+                    device_id: device_id.to_string(),
                     user_id: request.user_id,
                     package_name: item.package_name.clone(),
                     action: item.action,
@@ -332,16 +323,15 @@ pub async fn execute_package_operations<R: ProcessRunner>(
                     restoration_fidelity: RestorationFidelity::Failed,
                     blocked_reasons: Vec::new(),
                     limitation_note: plan.limitation_note,
-                    error_message: Some(err.to_string()),
+                    error_message: Some(sanitized),
                     executed_at_ms: now_epoch_ms(),
                 };
-                record_result(snapshot_store, &res);
+                storage.record_operation_result(&res, Some(&target_label))?;
                 results.push(res);
                 continue;
             }
         }
 
-        // Post-operation verification: never trust exit code 0 alone.
         let verified_state = match capture_live_package_state(
             service,
             adb_path,
@@ -354,28 +344,30 @@ pub async fn execute_package_operations<R: ProcessRunner>(
             Ok(state) => state,
             Err(err) => {
                 uncertain_count += 1;
+                let sanitized = redact_text(&err.to_string(), &redact_serials);
                 let res = PackageOperationResult {
                     operation_id: op_id,
-                    serial: target_serial.clone(),
+                    device_id: device_id.to_string(),
                     user_id: request.user_id,
                     package_name: item.package_name.clone(),
                     action: item.action,
-                    status: OperationStatus::VerificationMismatch,
+                    status: OperationStatus::UncertainTimeout,
                     previous_state: Some(previous_state),
                     verified_state: None,
                     restoration_fidelity: RestorationFidelity::Unverified,
                     blocked_reasons: Vec::new(),
-                    limitation_note: plan.limitation_note,
-                    error_message: Some(format!(
-                        "Command exited 0, but post-operation state verification failed: {err}"
-                    )),
+                    limitation_note: Some(
+                        "Command exited 0, but post-operation verification did not complete. Run Verify Live State in History & Recovery."
+                            .to_string(),
+                    ),
+                    error_message: Some(format!("Verification failed: {sanitized}")),
                     executed_at_ms: now_epoch_ms(),
                 };
-                record_result(snapshot_store, &res);
+                storage.record_operation_result(&res, Some(&target_label))?;
                 results.push(res);
                 if err.is_connection_loss() {
                     aborted_early_reason = Some(format!(
-                        "Aborted remaining items after connection loss during verification: {err}"
+                        "Aborted remaining items after connection loss during verification: {sanitized}"
                     ));
                     break;
                 }
@@ -383,15 +375,11 @@ pub async fn execute_package_operations<R: ProcessRunner>(
             }
         };
 
-        let (status, fidelity, extra_note) = evaluate_verification(
-            item.action,
-            &plan,
-            &verified_state,
-        );
+        let (status, fidelity, extra_note) =
+            evaluate_verification(item.action, &plan, &verified_state);
 
         match status {
             OperationStatus::Succeeded => succeeded_count += 1,
-            OperationStatus::VerificationMismatch => failed_count += 1,
             _ => failed_count += 1,
         }
 
@@ -399,7 +387,7 @@ pub async fn execute_package_operations<R: ProcessRunner>(
 
         let res = PackageOperationResult {
             operation_id: op_id,
-            serial: target_serial.clone(),
+            device_id: device_id.to_string(),
             user_id: request.user_id,
             package_name: item.package_name.clone(),
             action: item.action,
@@ -419,12 +407,13 @@ pub async fn execute_package_operations<R: ProcessRunner>(
             },
             executed_at_ms: now_epoch_ms(),
         };
-        record_result(snapshot_store, &res);
+        storage.record_operation_result(&res, Some(&target_label))?;
         results.push(res);
     }
 
     Ok(BulkOperationResult {
         serial: target_serial,
+        device_id: device_id.to_string(),
         user_id: request.user_id,
         results,
         succeeded_count,
@@ -468,7 +457,6 @@ pub async fn capture_live_package_state<R: ProcessRunner>(
     let effective_state = if effective_from_configured != EffectivePackageState::Unknown {
         effective_from_configured
     } else {
-        // Fallback when OEM/AOSP omits explicit `enabled=` in dumpsys output.
         let disabled_cmd = AdbReadOnlyCommand::PmListPackages {
             serial: serial.to_string(),
             filter: PackageListFilter::Disabled,
@@ -494,6 +482,26 @@ pub async fn capture_live_package_state<R: ProcessRunner>(
         configured_state_code: details.configured_state_code,
         installed_for_user: details.installed_for_user,
     })
+}
+
+fn target_state_token(
+    effective: EffectivePackageState,
+    configured: Option<ConfiguredPackageState>,
+) -> String {
+    let eff = match effective {
+        EffectivePackageState::Enabled => "enabled",
+        EffectivePackageState::Disabled => "disabled",
+        EffectivePackageState::Unknown => "unknown",
+    };
+    let cfg = match configured {
+        Some(ConfiguredPackageState::Default) => "default",
+        Some(ConfiguredPackageState::Enabled) => "enabled",
+        Some(ConfiguredPackageState::Disabled) => "disabled",
+        Some(ConfiguredPackageState::DisabledUser) => "disabled_user",
+        Some(ConfiguredPackageState::DisabledUntilUsed) => "disabled_until_used",
+        Some(ConfiguredPackageState::Unknown) | None => "any",
+    };
+    format!("{eff}:{cfg}")
 }
 
 fn resolve_mutation_plan(
@@ -557,7 +565,9 @@ fn resolve_mutation_plan(
             };
             plan_snapshot_restoration(serial, user_id, package_name, snap, capabilities)
         }
-        PackageAction::KeepCurrent => Err("KeepCurrent should not invoke mutation planning".to_string()),
+        PackageAction::KeepCurrent => {
+            Err("KeepCurrent should not invoke mutation planning".to_string())
+        }
     }
 }
 
@@ -771,11 +781,4 @@ fn merge_notes(a: Option<String>, b: Option<String>) -> Option<String> {
         (None, Some(y)) => Some(y),
         (None, None) => None,
     }
-}
-
-fn record_result(store_lock: &RwLock<SnapshotStore>, result: &PackageOperationResult) {
-    let mut store = store_lock
-        .write()
-        .unwrap_or_else(PoisonError::into_inner);
-    store.record_operation_result(result.clone());
 }

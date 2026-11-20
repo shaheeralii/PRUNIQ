@@ -18,6 +18,12 @@ pub enum AdtError {
     #[error("Recommendation rule database error: {message}")]
     RuleValidation { message: String },
 
+    #[error("Local SQLite storage error: {message}")]
+    DatabaseError { message: String },
+
+    #[error("Operation record '{operation_id}' was not found in local history.")]
+    OperationNotFound { operation_id: String },
+
     #[error("Another package operation is already running on device '{serial}'. Wait for it to finish before starting a new operation.")]
     OperationInProgress { serial: String },
 
@@ -78,6 +84,8 @@ impl AdtError {
             Self::InvalidDeviceSerial { .. } => "invalid_device_serial",
             Self::InvalidPackageName { .. } => "invalid_package_name",
             Self::RuleValidation { .. } => "rule_validation",
+            Self::DatabaseError { .. } => "database_error",
+            Self::OperationNotFound { .. } => "operation_not_found",
             Self::OperationInProgress { .. } => "operation_in_progress",
             Self::ConfirmationRequired => "confirmation_required",
             Self::UserIdRequired => "user_id_required",
@@ -108,6 +116,12 @@ impl AdtError {
             Self::RuleValidation { .. } => Some(
                 "Verify the package-rule JSON conforms to data/package-rules/schema.json and includes evidence for verified rules.",
             ),
+            Self::DatabaseError { .. } => Some(
+                "Check local filesystem permissions for the application data folder and retry.",
+            ),
+            Self::OperationNotFound { .. } => Some(
+                "Refresh the history list to verify whether the operation entry still exists.",
+            ),
             Self::OperationInProgress { .. } => Some(
                 "Conflicting operations cannot run simultaneously on the same device. Wait for the active operation to complete.",
             ),
@@ -130,10 +144,10 @@ impl AdtError {
                 "Check USB driver installation or operating system USB permissions for this device.",
             ),
             Self::DeviceDisconnected { .. } => Some(
-                "Reconnect the device, refresh the device list, and verify actual package state before retrying.",
+                "Reconnect the device, refresh the device list, and verify actual package state in History & Recovery before retrying.",
             ),
             Self::Timeout { .. } => Some(
-                "Terminating the local ADB process does not prove the device stopped executing. Verify actual device state before retrying.",
+                "Terminating the local ADB process does not prove the device stopped executing. Use Verify Live State in History & Recovery before retrying.",
             ),
             _ => None,
         }
