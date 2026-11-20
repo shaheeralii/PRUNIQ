@@ -1,18 +1,25 @@
 :root {
-  --bg-page: #f7f8fa;
+  --bg-page: #f6f7f9;
   --bg-surface: #ffffff;
-  --bg-subtle: #f0f2f5;
-  --border-default: #d6dbe2;
+  --bg-subtle: #eff1f5;
+  --bg-hover: #f3f5f8;
+  --border-default: #d5dbe3;
+  --border-strong: #b9c2cf;
   --text-primary: #1a202c;
   --text-secondary: #4a5568;
+  --text-muted: #64748b;
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
+  --accent-soft: #eff6ff;
   --status-ok-bg: #ecfdf3;
   --status-ok-text: #166534;
+  --status-ok-border: #bbf7d0;
   --status-warn-bg: #fffbeb;
   --status-warn-text: #92400e;
+  --status-warn-border: #fde68a;
   --status-err-bg: #fef2f2;
   --status-err-text: #991b1b;
+  --status-err-border: #fecaca;
   --radius: 6px;
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -26,7 +33,13 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.45;
   color: var(--text-primary);
   background-color: var(--bg-page);
+}
+
+button,
+input,
+select {
+  font: inherit;
 }

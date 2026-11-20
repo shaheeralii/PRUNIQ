@@ -1,221 +1,297 @@
 import { useCallback, useEffect, useState } from "react";
+import { AlertBanner } from "./components/feedback/AlertBanner";
+import { StatusBadge } from "./components/shared/StatusBadge";
+import { AppManagerPanel } from "./features/app-manager/AppManagerPanel";
+import { DeviceInfoPanel } from "./features/device-info/DeviceInfoPanel";
+import { AdbDevicePanel } from "./features/devices/AdbDevicePanel";
+import { detectAdb, listDevices, parseAdtError } from "./lib/tauri/adb";
+import { getDeviceCapabilities, getDeviceSpecs } from "./lib/tauri/device";
 import {
-  detectAdb,
-  getBasicDeviceInfo,
-  listDevices,
-  parseAdtError,
-} from "./lib/tauri/adb";
-import type {
-  AdbDevice,
-  AdbStatus,
-  AdtErrorPayload,
-  BasicDeviceInfo,
-} from "./types/adb";
+  inspectPackageDetails,
+  scanInstalledPackages,
+} from "./lib/tauri/packages";
 import styles from "./styles/app.module.css";
+import type { AdbDevice, AdbStatus, AdtErrorPayload } from "./types/adb";
+import type { DeviceCapabilities, DeviceSpecs } from "./types/device";
+import type {
+  InstalledPackage,
+  PackageDetails,
+  PackageInventory,
+} from "./types/packages";
+
+type ActiveTab = "devices" | "device-info" | "apps";
 
 export function App() {
-  const [customPath, setCustomPath] = useState("");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("devices");
+  const [customAdbPath, setCustomAdbPath] = useState("");
   const [adbStatus, setAdbStatus] = useState<AdbStatus | null>(null);
   const [devices, setDevices] = useState<AdbDevice[]>([]);
   const [selectedSerial, setSelectedSerial] = useState<string | null>(null);
-  const [deviceInfo, setDeviceInfo] = useState<BasicDeviceInfo | null>(null);
-  const [loading, setLoading] = useState<string | null>(null);
+
+  const [deviceSpecs, setDeviceSpecs] = useState<DeviceSpecs | null>(null);
+  const [capabilities, setCapabilities] = useState<DeviceCapabilities | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+
+  const [inventory, setInventory] = useState<PackageInventory | null>(null);
+  const [selectedPackageName, setSelectedPackageName] = useState<string | null>(null);
+  const [packageDetails, setPackageDetails] = useState<PackageDetails | null>(null);
+
+  const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
+  const [inspectingPackage, setInspectingPackage] = useState(false);
   const [error, setError] = useState<AdtErrorPayload | null>(null);
 
-  const handleDetectAdb = useCallback(async (pathOverride?: string) => {
+  const clearSelectedDeviceData = useCallback(() => {
+    setDeviceSpecs(null);
+    setCapabilities(null);
+    setSelectedUserId(null);
+    setInventory(null);
+    setSelectedPackageName(null);
+    setPackageDetails(null);
+  }, []);
+
+  const loadDeviceContext = useCallback(async (serial: string) => {
     setError(null);
-    setLoading("Checking ADB availability...");
+    setLoadingMessage(`Reading specifications and capabilities for ${serial}...`);
     try {
-      const status = await detectAdb(pathOverride);
-      setAdbStatus(status);
-      if (!status.available) {
-        setDevices([]);
-        setSelectedSerial(null);
-        setDeviceInfo(null);
-      }
+      const [specs, caps] = await Promise.all([
+        getDeviceSpecs(serial),
+        getDeviceCapabilities(serial),
+      ]);
+      setDeviceSpecs(specs);
+      setCapabilities(caps);
+      setSelectedUserId(caps.activeUserId);
     } catch (err) {
       setError(parseAdtError(err));
     } finally {
-      setLoading(null);
+      setLoadingMessage(null);
     }
   }, []);
 
+  const handleCheckAdb = useCallback(
+    async (pathOverride?: string) => {
+      setError(null);
+      setLoadingMessage("Checking ADB environment...");
+      try {
+        const status = await detectAdb(pathOverride);
+        setAdbStatus(status);
+        if (!status.available) {
+          setDevices([]);
+          setSelectedSerial(null);
+          clearSelectedDeviceData();
+          return;
+        }
+        const found = await listDevices();
+        setDevices(found);
+      } catch (err) {
+        setError(parseAdtError(err));
+      } finally {
+        setLoadingMessage(null);
+      }
+    },
+    [clearSelectedDeviceData],
+  );
+
   useEffect(() => {
-    void handleDetectAdb();
-  }, [handleDetectAdb]);
+    void handleCheckAdb();
+  }, [handleCheckAdb]);
 
   const handleRefreshDevices = async () => {
     setError(null);
-    setLoading("Scanning connected ADB devices...");
+    setLoadingMessage("Scanning connected ADB devices...");
     try {
       const found = await listDevices();
       setDevices(found);
-      if (selectedSerial && !found.some((d) => d.serial === selectedSerial)) {
+      if (
+        selectedSerial &&
+        !found.some(
+          (d) => d.serial === selectedSerial && d.state === "authorized",
+        )
+      ) {
         setSelectedSerial(null);
-        setDeviceInfo(null);
+        clearSelectedDeviceData();
       }
     } catch (err) {
       setError(parseAdtError(err));
     } finally {
-      setLoading(null);
+      setLoadingMessage(null);
     }
   };
 
-  const handleInspectDevice = async (serial: string) => {
+  const handleSelectDevice = async (device: AdbDevice) => {
+    if (device.state !== "authorized") {
+      return;
+    }
+    setSelectedSerial(device.serial);
+    clearSelectedDeviceData();
+    await loadDeviceContext(device.serial);
+    setActiveTab("device-info");
+  };
+
+  const handleScanPackages = async () => {
+    if (!selectedSerial) {
+      return;
+    }
     setError(null);
-    setSelectedSerial(serial);
-    setDeviceInfo(null);
-    setLoading(`Reading basic device properties for ${serial}...`);
+    setSelectedPackageName(null);
+    setPackageDetails(null);
+    setLoadingMessage(`Scanning installed packages on ${selectedSerial}...`);
     try {
-      const info = await getBasicDeviceInfo(serial);
-      setDeviceInfo(info);
+      const result = await scanInstalledPackages(selectedSerial, selectedUserId);
+      setInventory(result);
     } catch (err) {
       setError(parseAdtError(err));
     } finally {
-      setLoading(null);
+      setLoadingMessage(null);
     }
   };
 
+  const handleSelectPackage = (pkg: InstalledPackage) => {
+    setSelectedPackageName(pkg.packageName);
+    if (packageDetails && packageDetails.packageName !== pkg.packageName) {
+      setPackageDetails(null);
+    }
+  };
+
+  const handleInspectPackageDetails = async (packageName: string) => {
+    if (!selectedSerial) {
+      return;
+    }
+    setError(null);
+    setInspectingPackage(true);
+    try {
+      const details = await inspectPackageDetails(
+        selectedSerial,
+        packageName,
+        selectedUserId,
+      );
+      setPackageDetails(details);
+    } catch (err) {
+      setError(parseAdtError(err));
+    } finally {
+      setInspectingPackage(false);
+    }
+  };
+
+  const busy = loadingMessage !== null;
+
   return (
-    <main className={styles.container}>
+    <main className={styles.shell}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Android Debloating Toolkit</h1>
-        <span className={styles.badge}>Phase 1 â€” Read-Only ADB Foundation</span>
+        <div className={styles.titleGroup}>
+          <h1 className={styles.title}>Android Debloating Toolkit</h1>
+          <StatusBadge tone="neutral">Phase 2.5 â€” Read-Only GUI</StatusBadge>
+        </div>
+        <div className={styles.statusBar}>
+          <StatusBadge tone={adbStatus?.available ? "ok" : "warn"}>
+            {adbStatus?.available
+              ? `ADB ${adbStatus.adbVersion ?? "ready"}`
+              : "ADB unavailable"}
+          </StatusBadge>
+          <StatusBadge tone={selectedSerial ? "accent" : "neutral"}>
+            {selectedSerial ? `Target: ${selectedSerial}` : "No device selected"}
+          </StatusBadge>
+        </div>
       </header>
 
-      {error && (
-        <div className={styles.alertError} role="alert">
-          <strong>{error.message}</strong>
-          {error.guidance && <p className={styles.muted}>{error.guidance}</p>}
+      <nav className={styles.tabs} aria-label="Workspace sections">
+        <button
+          type="button"
+          className={`${styles.tabButton} ${
+            activeTab === "devices" ? styles.tabButtonActive : ""
+          }`}
+          onClick={() => setActiveTab("devices")}
+        >
+          1. Devices & ADB ({devices.length})
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${
+            activeTab === "device-info" ? styles.tabButtonActive : ""
+          }`}
+          disabled={!selectedSerial}
+          onClick={() => setActiveTab("device-info")}
+        >
+          2. Device Info & Capabilities
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${
+            activeTab === "apps" ? styles.tabButtonActive : ""
+          }`}
+          disabled={!selectedSerial}
+          onClick={() => setActiveTab("apps")}
+        >
+          3. Installed Applications
+          {inventory ? ` (${inventory.totalCount})` : ""}
+        </button>
+      </nav>
+
+      {loadingMessage && (
+        <div className={styles.loadingBar} role="status">
+          {loadingMessage}
         </div>
       )}
 
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <h2 className={styles.sectionTitle}>1. ADB Environment</h2>
-          <button
-            type="button"
-            className={styles.button}
-            disabled={loading !== null}
-            onClick={() => void handleDetectAdb(customPath)}
-          >
-            Check ADB
-          </button>
-        </div>
+      {error && (
+        <AlertBanner
+          tone="error"
+          title={error.message}
+          detail={error.guidance}
+          onDismiss={() => setError(null)}
+        />
+      )}
 
-        <div className={styles.row}>
-          <input
-            type="text"
-            className={styles.input}
-            placeholder="Optional custom path to adb.exe (leave empty to detect via PATH)"
-            value={customPath}
-            onChange={(e) => setCustomPath(e.target.value)}
-            aria-label="Custom ADB executable path"
-          />
-        </div>
+      {activeTab === "devices" && (
+        <AdbDevicePanel
+          customAdbPath={customAdbPath}
+          onCustomAdbPathChange={setCustomAdbPath}
+          adbStatus={adbStatus}
+          devices={devices}
+          selectedSerial={selectedSerial}
+          busy={busy}
+          onCheckAdb={() => void handleCheckAdb(customAdbPath)}
+          onRefreshDevices={() => void handleRefreshDevices()}
+          onSelectDevice={(device) => void handleSelectDevice(device)}
+        />
+      )}
 
-        {adbStatus && adbStatus.available ? (
-          <dl className={styles.kvGrid}>
-            <dt>Status</dt>
-            <dd>Available ({adbStatus.source})</dd>
-            <dt>Executable</dt>
-            <dd>{adbStatus.executablePath ?? "â€”"}</dd>
-            <dt>ADB Version</dt>
-            <dd>{adbStatus.adbVersion ?? "â€”"}</dd>
-            <dt>Platform-Tools</dt>
-            <dd>{adbStatus.platformToolsVersion ?? "â€”"}</dd>
-          </dl>
-        ) : adbStatus ? (
-          <div className={styles.alertWarn}>
-            <strong>ADB executable not found.</strong>
-            {adbStatus.guidance && <p className={styles.muted}>{adbStatus.guidance}</p>}
-          </div>
-        ) : null}
-      </section>
+      {activeTab === "device-info" && (
+        <DeviceInfoPanel
+          selectedSerial={selectedSerial}
+          specs={deviceSpecs}
+          capabilities={capabilities}
+          selectedUserId={selectedUserId}
+          onSelectUserId={(uid) => {
+            setSelectedUserId(uid);
+            setInventory(null);
+            setSelectedPackageName(null);
+            setPackageDetails(null);
+          }}
+          busy={busy}
+          onRefresh={() => {
+            if (selectedSerial) {
+              void loadDeviceContext(selectedSerial);
+            }
+          }}
+        />
+      )}
 
-      <section className={styles.card}>
-        <div className={styles.cardHeader}>
-          <h2 className={styles.sectionTitle}>2. Connected Devices</h2>
-          <button
-            type="button"
-            className={`${styles.button} ${styles.buttonPrimary}`}
-            disabled={loading !== null || !adbStatus?.available}
-            onClick={() => void handleRefreshDevices()}
-          >
-            Refresh Devices
-          </button>
-        </div>
-
-        {devices.length === 0 ? (
-          <p className={styles.muted}>
-            No devices listed yet. Connect an Android device with USB debugging enabled and click Refresh Devices.
-          </p>
-        ) : (
-          <ul className={styles.deviceList}>
-            {devices.map((device) => {
-              const isSelected = device.serial === selectedSerial;
-              const isAuthorized = device.state === "authorized";
-              return (
-                <li
-                  key={device.serial}
-                  className={`${styles.deviceItem} ${isSelected ? styles.deviceSelected : ""}`}
-                >
-                  <div className={styles.deviceMeta}>
-                    <span className={styles.serial}>{device.serial}</span>
-                    <span className={styles.muted}>
-                      {[device.model, device.device, device.transportId ? `transport ${device.transportId}` : null]
-                        .filter(Boolean)
-                        .join(" Â· ") || "No extended metadata"}
-                    </span>
-                    {device.guidance && <span className={styles.muted}>{device.guidance}</span>}
-                  </div>
-                  <div className={styles.row}>
-                    <span
-                      className={`${styles.stateTag} ${
-                        isAuthorized ? styles.stateAuthorized : styles.stateWarning
-                      }`}
-                    >
-                      {device.rawState}
-                    </span>
-                    <button
-                      type="button"
-                      className={styles.button}
-                      disabled={loading !== null || !isAuthorized}
-                      onClick={() => void handleInspectDevice(device.serial)}
-                    >
-                      Inspect
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className={styles.card}>
-        <h2 className={styles.sectionTitle}>3. Basic Device Information (Read-Only)</h2>
-        {deviceInfo ? (
-          <dl className={styles.kvGrid}>
-            <dt>Targeted Serial</dt>
-            <dd>{deviceInfo.serial}</dd>
-            <dt>Manufacturer</dt>
-            <dd>{deviceInfo.manufacturer ?? "Unavailable"}</dd>
-            <dt>Model</dt>
-            <dd>{deviceInfo.model ?? "Unavailable"}</dd>
-            <dt>Android Version</dt>
-            <dd>{deviceInfo.androidVersion ?? "Unavailable"}</dd>
-            <dt>API Level</dt>
-            <dd>{deviceInfo.apiLevel ?? deviceInfo.rawApiLevel ?? "Unavailable"}</dd>
-          </dl>
-        ) : (
-          <p className={styles.muted}>
-            Select an authorized device and click Inspect to query manufacturer, model, Android version, and API level.
-          </p>
-        )}
-      </section>
-
-      {loading && <p className={styles.muted}>{loading}</p>}
+      {activeTab === "apps" && (
+        <AppManagerPanel
+          selectedSerial={selectedSerial}
+          selectedUserId={selectedUserId}
+          inventory={inventory}
+          selectedPackageName={selectedPackageName}
+          packageDetails={packageDetails}
+          busy={busy}
+          inspectingPackage={inspectingPackage}
+          onScanPackages={() => void handleScanPackages()}
+          onSelectPackage={handleSelectPackage}
+          onInspectPackageDetails={(pkgName) =>
+            void handleInspectPackageDetails(pkgName)
+          }
+        />
+      )}
     </main>
   );
 }
