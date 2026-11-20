@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertBanner } from "../../components/feedback/AlertBanner";
+import { IconDownload } from "../../components/shared/Icons";
 import type { AppSettings, DiagnosticBundle } from "../../types/history";
 import type { RuleDatabaseSummary } from "../../types/rules";
 import styles from "./SettingsPanel.module.css";
@@ -27,6 +28,7 @@ export function SettingsPanel({
     settings.logLevel,
   );
   const [savedNotice, setSavedNotice] = useState(false);
+  const [showJsonPreview, setShowJsonPreview] = useState(true);
 
   useEffect(() => {
     setAdbPath(settings.customAdbPath ?? "");
@@ -65,7 +67,7 @@ export function SettingsPanel({
       <section className={styles.card}>
         <h2 className={styles.heading}>Local Application Settings</h2>
         <p className={styles.muted}>
-          Settings are saved strictly locally in SQLite. ADT operates completely offline and never uploads device inventories.
+          Settings are saved locally in SQLite. ADT operates offline-first and never uploads device inventories or telemetry.
         </p>
 
         {savedNotice && (
@@ -117,7 +119,7 @@ export function SettingsPanel({
         </div>
 
         <p className={styles.muted}>
-          Confirmation policy: Explicit preview and confirmation before package mutations is always enforced for safety.
+          Confirmation policy: Explicit preview and confirmation before package mutations is always enforced.
         </p>
 
         <div className={styles.row}>
@@ -151,9 +153,9 @@ export function SettingsPanel({
         <h2 className={styles.heading}>Privacy-Aware Diagnostic Export</h2>
         <ul className={styles.list}>
           <li>Raw hardware ADB serials are never stored and are replaced with [REDACTED_SERIAL].</li>
-          <li>OS user profile folder names (e.g., C:\Users\&lt;name&gt;) are replaced with [REDACTED].</li>
+          <li>OS user profile folder names (for example, C:\Users\name) are replaced with [REDACTED].</li>
           <li>Raw shell command strings are omitted; only structured action records are exported.</li>
-          <li>Export happens strictly on demand and remains local to your machine.</li>
+          <li>Export runs strictly on demand and remains local to your machine.</li>
         </ul>
 
         <div className={styles.row}>
@@ -166,17 +168,27 @@ export function SettingsPanel({
             Generate Redacted Diagnostic Bundle
           </button>
           {diagnosticBundle && (
-            <button
-              type="button"
-              className={`${styles.button} ${styles.buttonPrimary}`}
-              onClick={handleDownloadDiagnostics}
-            >
-              Download JSON
-            </button>
+            <>
+              <button
+                type="button"
+                className={`${styles.button} ${styles.buttonPrimary}`}
+                onClick={handleDownloadDiagnostics}
+              >
+                <IconDownload size={13} />
+                <span>Download JSON</span>
+              </button>
+              <button
+                type="button"
+                className={styles.button}
+                onClick={() => setShowJsonPreview((prev) => !prev)}
+              >
+                {showJsonPreview ? "Hide Preview" : "Show Preview"}
+              </button>
+            </>
           )}
         </div>
 
-        {diagnosticBundle && (
+        {diagnosticBundle && showJsonPreview && (
           <pre className={styles.pre}>
             {JSON.stringify(diagnosticBundle, null, 2)}
           </pre>

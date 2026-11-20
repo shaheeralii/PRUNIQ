@@ -1,4 +1,5 @@
 import { AlertBanner } from "../../components/feedback/AlertBanner";
+import { IconRefresh } from "../../components/shared/Icons";
 import { StatusBadge, type BadgeTone } from "../../components/shared/StatusBadge";
 import {
   formatCommandSupport,
@@ -47,7 +48,7 @@ export function DeviceInfoPanel({
       <section className={styles.card}>
         <h2 className={styles.heading}>Device Information & Capabilities</h2>
         <p className={styles.muted}>
-          Select an authorized device from the Devices & ADB tab to load read-only hardware specifications and capability probes.
+          Select an authorized device from Devices & ADB to load read-only hardware specifications and capability probes.
         </p>
       </section>
     );
@@ -58,11 +59,28 @@ export function DeviceInfoPanel({
     ...(capabilities?.warnings ?? []),
   ];
 
+  const ramUsedPct =
+    specs?.hardware.memory.totalKb &&
+    specs.hardware.memory.availableKb !== null &&
+    specs.hardware.memory.totalKb > 0
+      ? Math.min(
+          100,
+          Math.round(
+            ((specs.hardware.memory.totalKb - specs.hardware.memory.availableKb) /
+              specs.hardware.memory.totalKb) *
+              100,
+          ),
+        )
+      : null;
+
+  const storagePct = specs?.hardware.internalStorage.usePercent ?? null;
+
   return (
     <div className={styles.stack}>
       <div className={styles.toolbar}>
         <p className={styles.muted}>
-          Target device: <strong className={styles.mono}>{selectedSerial}</strong>
+          Targeted device:{" "}
+          <strong className={styles.mono}>{selectedSerial}</strong>
         </p>
         <button
           type="button"
@@ -70,7 +88,8 @@ export function DeviceInfoPanel({
           disabled={busy}
           onClick={onRefresh}
         >
-          Refresh Specs & Capabilities
+          <IconRefresh size={13} />
+          <span>Refresh Specs & Capabilities</span>
         </button>
       </div>
 
@@ -124,6 +143,43 @@ export function DeviceInfoPanel({
 
           <section className={styles.card}>
             <h2 className={styles.heading}>Hardware, Memory & Storage</h2>
+
+            {ramUsedPct !== null && (
+              <div className={styles.usageBlock}>
+                <div className={styles.usageRow}>
+                  <span>RAM in use (estimated)</span>
+                  <span className={styles.mono}>
+                    {ramUsedPct}% · {formatKb(specs.hardware.memory.availableKb)} avail of{" "}
+                    {formatKb(specs.hardware.memory.totalKb)}
+                  </span>
+                </div>
+                <div className={styles.usageTrack}>
+                  <div
+                    className={styles.usageFill}
+                    style={{ width: `${ramUsedPct}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {storagePct !== null && (
+              <div className={styles.usageBlock}>
+                <div className={styles.usageRow}>
+                  <span>Internal storage ({specs.hardware.internalStorage.mountPoint})</span>
+                  <span className={styles.mono}>
+                    {storagePct}% · {formatKb(specs.hardware.internalStorage.availableKb)} free of{" "}
+                    {formatKb(specs.hardware.internalStorage.totalKb)}
+                  </span>
+                </div>
+                <div className={styles.usageTrack}>
+                  <div
+                    className={styles.usageFill}
+                    style={{ width: `${Math.min(100, storagePct)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             <dl className={styles.kvGrid}>
               <dt>CPU Architecture</dt>
               <dd>{specs.hardware.cpu.architecture ?? "Unavailable"}</dd>
@@ -137,27 +193,11 @@ export function DeviceInfoPanel({
               <dd>{specs.hardware.cpu.model ?? "Unavailable"}</dd>
               <dt>CPU Cores</dt>
               <dd>{specs.hardware.cpu.coreCount ?? "Unavailable"}</dd>
-              <dt>RAM (Total / Avail)</dt>
-              <dd>
-                {formatKb(specs.hardware.memory.totalKb)} /{" "}
-                {formatKb(specs.hardware.memory.availableKb)}
-              </dd>
               <dt>RAM (Free / Cached)</dt>
               <dd>
                 {formatKb(specs.hardware.memory.freeKb)} /{" "}
                 {formatKb(specs.hardware.memory.cachedKb)}
               </dd>
-              <dt>Storage ({specs.hardware.internalStorage.mountPoint})</dt>
-              <dd>
-                {formatKb(specs.hardware.internalStorage.usedKb)} used of{" "}
-                {formatKb(specs.hardware.internalStorage.totalKb)} (
-                {specs.hardware.internalStorage.usePercent !== null
-                  ? `${specs.hardware.internalStorage.usePercent}%`
-                  : "â€”"}
-                )
-              </dd>
-              <dt>Storage Available</dt>
-              <dd>{formatKb(specs.hardware.internalStorage.availableKb)}</dd>
               <dt>Display Size</dt>
               <dd>
                 {specs.hardware.display.physicalSize ?? "Unavailable"}
@@ -180,10 +220,10 @@ export function DeviceInfoPanel({
                   ? `${specs.hardware.battery.level}%`
                   : "Unavailable"}
                 {specs.hardware.battery.temperatureC !== null
-                  ? ` Â· ${specs.hardware.battery.temperatureC.toFixed(1)} Â°C`
+                  ? ` · ${specs.hardware.battery.temperatureC.toFixed(1)} °C`
                   : ""}
                 {specs.hardware.battery.status
-                  ? ` Â· ${specs.hardware.battery.status}`
+                  ? ` · ${specs.hardware.battery.status}`
                   : ""}
                 {specs.hardware.battery.chargingSource
                   ? ` (${specs.hardware.battery.chargingSource})`
@@ -207,18 +247,18 @@ export function DeviceInfoPanel({
                   ? `User ${capabilities.activeUserId}`
                   : "Undetected"}
               </dd>
-              <dt>Scan User Scope</dt>
+              <dt>Target User Scope</dt>
               <dd>
                 <select
                   className={styles.select}
-                  aria-label="Android user profile scope for package scan"
+                  aria-label="Android user profile scope for package operations"
                   value={selectedUserId === null ? "unscoped" : String(selectedUserId)}
                   onChange={(e) => {
                     const val = e.target.value;
                     onSelectUserId(val === "unscoped" ? null : Number(val));
                   }}
                 >
-                  <option value="unscoped">Device default (no --user flag)</option>
+                  <option value="unscoped">Device default (read-only scan only)</option>
                   {capabilities.users.map((u) => (
                     <option key={u.id} value={String(u.id)}>
                       User {u.id}: {u.name} {u.running ? "(running)" : ""}
@@ -236,7 +276,7 @@ export function DeviceInfoPanel({
           </section>
 
           <section className={styles.card}>
-            <h2 className={styles.heading}>Read-Only Capability Report</h2>
+            <h2 className={styles.heading}>Read-Only Capability Matrix</h2>
             <div>
               <div className={styles.capRow}>
                 <span className={styles.mono}>pm list packages flags</span>
@@ -251,19 +291,19 @@ export function DeviceInfoPanel({
                 </StatusBadge>
               </div>
               <div className={styles.capRow}>
-                <span className={styles.mono}>pm disable-user (Phase 4)</span>
+                <span className={styles.mono}>pm disable-user</span>
                 <StatusBadge tone={supportTone(capabilities.pmDisableUser)}>
                   {formatCommandSupport(capabilities.pmDisableUser)}
                 </StatusBadge>
               </div>
               <div className={styles.capRow}>
-                <span className={styles.mono}>pm enable (Phase 4)</span>
+                <span className={styles.mono}>pm enable</span>
                 <StatusBadge tone={supportTone(capabilities.pmEnable)}>
                   {formatCommandSupport(capabilities.pmEnable)}
                 </StatusBadge>
               </div>
               <div className={styles.capRow}>
-                <span className={styles.mono}>pm default-state (Phase 4)</span>
+                <span className={styles.mono}>pm default-state</span>
                 <StatusBadge tone={supportTone(capabilities.pmDefaultState)}>
                   {formatCommandSupport(capabilities.pmDefaultState)}
                 </StatusBadge>

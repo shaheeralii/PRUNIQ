@@ -5,10 +5,20 @@ export type BadgeTone = "neutral" | "ok" | "warn" | "error" | "accent";
 
 interface StatusBadgeProps {
   tone?: BadgeTone;
+  icon?: ReactNode;
   children: ReactNode;
 }
 
-export function StatusBadge({ tone = "neutral", children }: StatusBadgeProps) {
+export function StatusBadge({
+  tone = "neutral",
+  icon,
+  children,
+}: StatusBadgeProps) {
   const toneClass = tone === "neutral" ? "" : styles[tone];
-  return <span className={`${styles.badge} ${toneClass}`}>{children}</span>;
+  return (
+    <span className={`${styles.badge} ${toneClass}`}>
+      {icon}
+      {children}
+    </span>
+  );
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AlertBanner } from "../../components/feedback/AlertBanner";
+import { IconRefresh } from "../../components/shared/Icons";
 import { StatusBadge, type BadgeTone } from "../../components/shared/StatusBadge";
 import { formatConfiguredState, formatEffectiveState } from "../../lib/format";
 import type {
@@ -80,7 +81,7 @@ export function HistoryPanel({
           <div>
             <h2 className={styles.heading}>Operation History & Recovery</h2>
             <p className={styles.muted}>
-              Persisted locally in SQLite (no raw ADB serials or raw command strings stored). Clearing history preserves immutable Initial Toolkit Baselines.
+              Persisted locally in SQLite without raw hardware serials or raw shell strings. Clearing history preserves immutable Initial Toolkit Baselines.
             </p>
           </div>
           <div className={styles.actions}>
@@ -90,7 +91,8 @@ export function HistoryPanel({
               disabled={busy}
               onClick={onRefresh}
             >
-              Refresh
+              <IconRefresh size={13} />
+              <span>Refresh</span>
             </button>
             {!confirmClear ? (
               <button
@@ -199,7 +201,7 @@ export function HistoryPanel({
                     <div>
                       <span className={styles.mono}>{op.packageName}</span>{" "}
                       <span className={styles.muted}>
-                        Â· {op.action} Â· User {op.userId} Â·{" "}
+                        · {op.action} · User {op.userId} ·{" "}
                         {formatTimestamp(op.executedAtMs)}
                       </span>
                     </div>
@@ -220,23 +222,27 @@ export function HistoryPanel({
                   </div>
 
                   {op.previousState && (
-                    <p className={styles.muted}>
-                      Previous:{" "}
-                      {formatEffectiveState(op.previousState.effectiveState)} (
-                      {formatConfiguredState(
-                        op.previousState.configuredState,
-                        op.previousState.configuredStateCode,
-                      )}
-                      )
-                      {op.verifiedState
-                        ? ` â†’ Verified: ${formatEffectiveState(
-                            op.verifiedState.effectiveState,
-                          )} (${formatConfiguredState(
-                            op.verifiedState.configuredState,
-                            op.verifiedState.configuredStateCode,
-                          )})`
-                        : " â†’ Verified: Pending"}
-                    </p>
+                    <div className={styles.stateTransition}>
+                      <span className={styles.stateChip}>
+                        {formatEffectiveState(op.previousState.effectiveState)} (
+                        {formatConfiguredState(
+                          op.previousState.configuredState,
+                          op.previousState.configuredStateCode,
+                        )}
+                        )
+                      </span>
+                      <span aria-hidden="true">→</span>
+                      <span className={styles.stateChip}>
+                        {op.verifiedState
+                          ? `${formatEffectiveState(
+                              op.verifiedState.effectiveState,
+                            )} (${formatConfiguredState(
+                              op.verifiedState.configuredState,
+                              op.verifiedState.configuredStateCode,
+                            )})`
+                          : "Verification pending"}
+                      </span>
+                    </div>
                   )}
 
                   {op.limitationNote && (

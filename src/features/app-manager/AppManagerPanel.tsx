@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
 import { AlertBanner } from "../../components/feedback/AlertBanner";
+import {
+  IconAlert,
+  IconCheck,
+  IconHelp,
+  IconLock,
+  IconOctagon,
+  IconRefresh,
+} from "../../components/shared/Icons";
 import { StatusBadge, type BadgeTone } from "../../components/shared/StatusBadge";
 import {
   filterInstalledPackages,
@@ -81,13 +89,19 @@ function isProtectedInProfile(
   if (profile.activeLauncher === packageName) {
     return true;
   }
-  if (profile.usableLaunchers.length === 1 && profile.usableLaunchers[0] === packageName) {
+  if (
+    profile.usableLaunchers.length === 1 &&
+    profile.usableLaunchers[0] === packageName
+  ) {
     return true;
   }
   if (profile.activeKeyboard === packageName) {
     return true;
   }
-  if (profile.enabledKeyboards.length === 1 && profile.enabledKeyboards[0] === packageName) {
+  if (
+    profile.enabledKeyboards.length === 1 &&
+    profile.enabledKeyboards[0] === packageName
+  ) {
     return true;
   }
   return false;
@@ -106,6 +120,19 @@ function statusTone(status: OperationStatus): BadgeTone {
     case "failed":
     case "verification_mismatch":
       return "error";
+  }
+}
+
+function riskIcon(risk: RiskClassification) {
+  switch (risk) {
+    case "recommended_to_disable":
+      return <IconCheck size={12} />;
+    case "caution":
+      return <IconAlert size={12} />;
+    case "do_not_disable":
+      return <IconOctagon size={12} />;
+    case "unknown_unverified":
+      return <IconHelp size={12} />;
   }
 }
 
@@ -161,7 +188,8 @@ export function AppManagerPanel({
       return null;
     }
     return (
-      inventory.packages.find((p) => p.packageName === selectedPackageName) ?? null
+      inventory.packages.find((p) => p.packageName === selectedPackageName) ??
+      null
     );
   }, [inventory, selectedPackageName]);
 
@@ -180,7 +208,7 @@ export function AppManagerPanel({
       <section className={styles.card}>
         <h2 className={styles.heading}>Installed Applications</h2>
         <p className={styles.muted}>
-          Select an authorized device from the Devices & ADB tab before scanning or managing packages.
+          Select an authorized device from Devices & ADB before scanning or managing packages.
         </p>
       </section>
     );
@@ -224,9 +252,11 @@ export function AppManagerPanel({
           <div>
             <h2 className={styles.heading}>Installed Application Inventory</h2>
             <p className={styles.muted}>
-              Target: <strong>{selectedSerial}</strong> Â· User scope:{" "}
+              Target: <strong>{selectedSerial}</strong> · User scope:{" "}
               <strong>
-                {selectedUserId !== null ? `User ${selectedUserId}` : "Not selected"}
+                {selectedUserId !== null
+                  ? `User ${selectedUserId}`
+                  : "Not selected"}
               </strong>
             </p>
           </div>
@@ -239,7 +269,8 @@ export function AppManagerPanel({
               onScanPackages();
             }}
           >
-            {inventory ? "Rescan Packages" : "Scan Packages"}
+            <IconRefresh size={13} />
+            <span>{inventory ? "Rescan Packages" : "Scan Packages"}</span>
           </button>
         </div>
 
@@ -247,16 +278,18 @@ export function AppManagerPanel({
           <AlertBanner
             tone="warn"
             title="Explicit Android User ID required for package management"
-            detail="Select a specific Android user profile in the Device Info & Capabilities tab before running Disable, Enable, or Restore operations. ADT never silently assumes User 0."
+            detail="Select a specific Android user profile in Device Specs before running Disable, Enable, or Restore operations. ADT never silently assumes User 0."
           />
         )}
 
         {ruleDbSummary && (
           <div className={styles.ruleDbBar}>
-            Offline recommendation database (<strong>{ruleDbSummary.databaseVersion}</strong>):{" "}
-            <strong>{ruleDbSummary.activeRules}</strong> active rules (
-            <strong>{ruleDbSummary.verifiedRules}</strong> verified). Active protections:{" "}
-            launcher <strong>{protections?.activeLauncher ?? "unverified"}</strong>, keyboard{" "}
+            Offline rules (<strong>{ruleDbSummary.databaseVersion}</strong>):{" "}
+            <strong>{ruleDbSummary.activeRules}</strong> active (
+            <strong>{ruleDbSummary.verifiedRules}</strong> verified). Dynamic
+            guards: launcher{" "}
+            <strong>{protections?.activeLauncher ?? "unverified"}</strong>,
+            keyboard{" "}
             <strong>{protections?.activeKeyboard ?? "unverified"}</strong>.
           </div>
         )}
@@ -266,7 +299,7 @@ export function AppManagerPanel({
             <div className={styles.statsRow}>
               <span>
                 Showing <strong>{filteredPackages.length}</strong> of{" "}
-                <strong>{inventory.totalCount}</strong> packages
+                <strong>{inventory.totalCount}</strong>
               </span>
               <span>
                 Enabled: <strong>{inventory.enabledCount}</strong>
@@ -306,7 +339,9 @@ export function AppManagerPanel({
                 }
               >
                 <option value="all">All risks</option>
-                <option value="recommended_to_disable">Recommended to Disable</option>
+                <option value="recommended_to_disable">
+                  Recommended to Disable
+                </option>
                 <option value="caution">Caution</option>
                 <option value="do_not_disable">Do Not Disable</option>
                 <option value="unknown_unverified">Unknown / Unverified</option>
@@ -382,7 +417,7 @@ export function AppManagerPanel({
                     }))
                   }
                 />
-                Updated system only
+                Updated system
               </label>
 
               {hasActiveFilters && (
@@ -391,7 +426,7 @@ export function AppManagerPanel({
                   className={styles.button}
                   onClick={() => setFilter(DEFAULT_FILTER)}
                 >
-                  Clear Filters
+                  Reset
                 </button>
               )}
             </div>
@@ -399,7 +434,8 @@ export function AppManagerPanel({
             {checkedPackages.length > 0 && (
               <div className={styles.bulkBar}>
                 <span>
-                  <strong>{checkedPackages.length}</strong> package(s) selected for bulk preview
+                  <strong>{checkedPackages.length}</strong> package(s) queued
+                  for preview
                 </span>
                 <div className={styles.actionRow}>
                   <button
@@ -441,7 +477,7 @@ export function AppManagerPanel({
                     className={styles.button}
                     onClick={() => setCheckedPackages([])}
                   >
-                    Clear Selection
+                    Clear
                   </button>
                 </div>
               </div>
@@ -454,8 +490,8 @@ export function AppManagerPanel({
         <section className={styles.card}>
           <div className={styles.toolbar}>
             <h3 className={styles.heading}>
-              Last Operation Results ({lastOperationResult.succeededCount} succeeded,{" "}
-              {lastOperationResult.blockedCount} blocked,{" "}
+              Last Operation Results ({lastOperationResult.succeededCount}{" "}
+              succeeded, {lastOperationResult.blockedCount} blocked,{" "}
               {lastOperationResult.uncertainCount} uncertain,{" "}
               {lastOperationResult.failedCount} failed)
             </h3>
@@ -482,7 +518,9 @@ export function AppManagerPanel({
                 <div className={styles.toolbar}>
                   <strong>{r.packageName}</strong>
                   <div className={styles.actionRow}>
-                    <StatusBadge tone={statusTone(r.status)}>{r.status}</StatusBadge>
+                    <StatusBadge tone={statusTone(r.status)}>
+                      {r.status}
+                    </StatusBadge>
                     {r.restorationFidelity !== "not_applicable" && (
                       <StatusBadge
                         tone={r.restorationFidelity === "exact" ? "ok" : "warn"}
@@ -495,15 +533,19 @@ export function AppManagerPanel({
                 {r.verifiedState && (
                   <p className={styles.muted}>
                     Verified live state:{" "}
-                    {formatEffectiveState(r.verifiedState.effectiveState)} Â·{" "}
+                    {formatEffectiveState(r.verifiedState.effectiveState)} ·{" "}
                     {formatConfiguredState(
                       r.verifiedState.configuredState,
                       r.verifiedState.configuredStateCode,
                     )}
                   </p>
                 )}
-                {r.limitationNote && <p className={styles.muted}>{r.limitationNote}</p>}
-                {r.errorMessage && <p className={styles.muted}>{r.errorMessage}</p>}
+                {r.limitationNote && (
+                  <p className={styles.muted}>{r.limitationNote}</p>
+                )}
+                {r.errorMessage && (
+                  <p className={styles.muted}>{r.errorMessage}</p>
+                )}
               </li>
             ))}
           </ul>
@@ -521,7 +563,9 @@ export function AppManagerPanel({
       {!inventory ? (
         <section className={styles.card}>
           <p className={styles.muted}>
-            Click <strong>Scan Packages</strong> to enumerate installed packages, evaluate offline recommendations, and enable guarded package controls.
+            Click <strong>Scan Packages</strong> to enumerate installed packages
+            using bulk ADB queries, evaluate offline recommendations, and unlock
+            guarded package controls.
           </p>
         </section>
       ) : (
@@ -549,8 +593,12 @@ export function AppManagerPanel({
                   filteredPackages.map((pkg) => {
                     const isSelected = pkg.packageName === selectedPackageName;
                     const rec = recommendations[pkg.packageName];
-                    const risk: RiskClassification = rec?.risk ?? "unknown_unverified";
-                    const isProtected = isProtectedInProfile(pkg.packageName, protections);
+                    const risk: RiskClassification =
+                      rec?.risk ?? "unknown_unverified";
+                    const isProtected = isProtectedInProfile(
+                      pkg.packageName,
+                      protections,
+                    );
                     return (
                       <tr
                         key={pkg.packageName}
@@ -571,19 +619,33 @@ export function AppManagerPanel({
                           <span className={styles.pkgLabel}>
                             {pkg.label}
                             {isProtected && (
-                              <StatusBadge tone="error">Protected</StatusBadge>
+                              <StatusBadge
+                                tone="error"
+                                icon={<IconLock size={11} />}
+                              >
+                                Protected
+                              </StatusBadge>
                             )}
                           </span>
-                          <span className={styles.pkgId}>{pkg.packageName}</span>
+                          <span className={styles.pkgId}>
+                            {pkg.packageName}
+                          </span>
                         </td>
                         <td>
-                          <StatusBadge tone={riskTone(risk)}>
+                          <StatusBadge
+                            tone={riskTone(risk)}
+                            icon={riskIcon(risk)}
+                          >
                             {formatRisk(risk)}
                           </StatusBadge>
                         </td>
                         <td>
                           <StatusBadge
-                            tone={pkg.origin === "third_party" ? "accent" : "neutral"}
+                            tone={
+                              pkg.origin === "third_party"
+                                ? "accent"
+                                : "neutral"
+                            }
                           >
                             {formatOrigin(pkg.origin)}
                           </StatusBadge>
@@ -610,32 +672,38 @@ export function AppManagerPanel({
             </table>
           </div>
 
-          <aside className={styles.card}>
+          <aside className={styles.inspectorCard}>
             <div className={styles.toolbar}>
-              <h3 className={styles.heading}>Application Details</h3>
+              <h3 className={styles.heading}>Package Inspector</h3>
               {selectedPackage && (
                 <button
                   type="button"
                   className={styles.button}
                   disabled={busy || inspectingPackage}
-                  onClick={() => onInspectPackageDetails(selectedPackage.packageName)}
+                  onClick={() =>
+                    onInspectPackageDetails(selectedPackage.packageName)
+                  }
                 >
                   {inspectingPackage
                     ? "Inspecting..."
                     : packageDetails?.packageName === selectedPackage.packageName
-                      ? "Refresh Details"
-                      : "Inspect (dumpsys)"}
+                      ? "Refresh dumpsys"
+                      : "Inspect dumpsys"}
                 </button>
               )}
             </div>
 
             {!selectedPackage ? (
               <p className={styles.muted}>
-                Select any row in the application table to inspect metadata, recommendation evidence, recovery snapshots, and package controls.
+                Select any row in the inventory table to view controls, recovery
+                snapshots, recommendation evidence, and live{" "}
+                <code>dumpsys package</code> inspection.
               </p>
             ) : (
               <>
-                <h4 className={styles.subHeading}>Package Controls (User {selectedUserId ?? "â€”"})</h4>
+                <h4 className={styles.subHeading}>
+                  Controls · User {selectedUserId ?? "—"}
+                </h4>
                 <div className={styles.actionRow}>
                   <button
                     type="button"
@@ -680,9 +748,14 @@ export function AppManagerPanel({
                   <button
                     type="button"
                     className={styles.button}
-                    disabled={!canMutate || !selectedSnapshotStatus?.latestPreOperation}
+                    disabled={
+                      !canMutate || !selectedSnapshotStatus?.latestPreOperation
+                    }
                     onClick={() =>
-                      triggerSingleAction(selectedPackage.packageName, "undo_last")
+                      triggerSingleAction(
+                        selectedPackage.packageName,
+                        "undo_last",
+                      )
                     }
                   >
                     Undo Last
@@ -708,23 +781,24 @@ export function AppManagerPanel({
                   <AlertBanner
                     tone="error"
                     title="Disable blocked by ADT protection"
-                    detail="This package is an immutable core component or the active/sole launcher or keyboard on this device."
+                    detail="Immutable core system component or active/sole launcher or keyboard."
                   />
                 )}
 
                 {selectedSnapshotStatus?.baseline && (
                   <p className={styles.muted}>
-                    Initial toolkit baseline:{" "}
+                    Baseline:{" "}
                     <strong>
                       {formatConfiguredState(
                         selectedSnapshotStatus.baseline.configuredState,
                         selectedSnapshotStatus.baseline.configuredStateCode,
                       )}
                     </strong>{" "}
-                    (pre-op history: {selectedSnapshotStatus.preOperationCount})
+                    · {selectedSnapshotStatus.preOperationCount} pre-op snapshot(s)
                   </p>
                 )}
 
+                <h4 className={styles.subHeading}>Metadata</h4>
                 <dl className={styles.kvGrid}>
                   <dt>Label</dt>
                   <dd>{selectedPackage.label}</dd>
@@ -744,11 +818,16 @@ export function AppManagerPanel({
                 {selectedRecommendation ? (
                   <>
                     <div>
-                      <StatusBadge tone={riskTone(selectedRecommendation.risk)}>
+                      <StatusBadge
+                        tone={riskTone(selectedRecommendation.risk)}
+                        icon={riskIcon(selectedRecommendation.risk)}
+                      >
                         {formatRisk(selectedRecommendation.risk)}
                       </StatusBadge>
                     </div>
-                    <p className={styles.muted}>{selectedRecommendation.explanation}</p>
+                    <p className={styles.muted}>
+                      {selectedRecommendation.explanation}
+                    </p>
                     <dl className={styles.kvGrid}>
                       <dt>Match Scope</dt>
                       <dd>{formatMatchScope(selectedRecommendation.matchScope)}</dd>
@@ -773,17 +852,36 @@ export function AppManagerPanel({
                         </>
                       )}
                     </dl>
+                    {selectedRecommendation.evidence.length > 0 && (
+                      <ul className={styles.evidenceList}>
+                        {selectedRecommendation.evidence.map((ev, idx) => (
+                          <li
+                            key={`${idx}-${ev.testDate}`}
+                            className={styles.evidenceItem}
+                          >
+                            <strong>
+                              {ev.deviceModelOrCodename} · {ev.androidVersion} (
+                              {ev.testDate})
+                            </strong>
+                            <span>Observed: {ev.observedBehavior}</span>
+                            <span>Limitations: {ev.limitations}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </>
                 ) : (
                   <p className={styles.muted}>
-                    No recommendation evaluation available for this package yet.
+                    No recommendation evaluation available yet.
                   </p>
                 )}
 
                 {packageDetails &&
                   packageDetails.packageName === selectedPackage.packageName && (
                     <>
-                      <h4 className={styles.subHeading}>Targeted dumpsys Inspection</h4>
+                      <h4 className={styles.subHeading}>
+                        Targeted dumpsys Inspection
+                      </h4>
                       <dl className={styles.kvGrid}>
                         <dt>Version Name</dt>
                         <dd>{packageDetails.versionName ?? "Unavailable"}</dd>

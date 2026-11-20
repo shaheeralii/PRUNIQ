@@ -1,4 +1,5 @@
 import { AlertBanner } from "../feedback/AlertBanner";
+import { IconLock, IconShield } from "../shared/Icons";
 import { StatusBadge } from "../shared/StatusBadge";
 import type { BulkOperationPreview, PackageAction } from "../../types/operations";
 import styles from "./OperationPreviewDialog.module.css";
@@ -34,22 +35,43 @@ export function OperationPreviewDialog({
   onConfirm,
 }: OperationPreviewDialogProps) {
   return (
-    <div className={styles.backdrop} role="dialog" aria-modal="true" aria-labelledby="op-preview-title">
+    <div
+      className={styles.backdrop}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="op-preview-title"
+    >
       <div className={styles.dialog}>
         <header className={styles.header}>
-          <h2 id="op-preview-title" className={styles.title}>
-            Review & Confirm Package Operations
-          </h2>
+          <div className={styles.titleGroup}>
+            <IconShield size={16} />
+            <h2 id="op-preview-title" className={styles.title}>
+              Review & Confirm Package Operations
+            </h2>
+          </div>
           <StatusBadge tone="accent">
-            User {preview.userId} Â· {preview.serial}
+            Android User {preview.userId} · {preview.serial}
           </StatusBadge>
         </header>
 
         <div className={styles.body}>
+          <div className={styles.summaryStrip}>
+            <div className={styles.summaryCell}>
+              <span className={styles.summaryLabel}>Executable</span>
+              <span className={styles.summaryValue}>{preview.executableCount}</span>
+            </div>
+            <div className={styles.summaryCell}>
+              <span className={styles.summaryLabel}>Protected / Blocked</span>
+              <span className={styles.summaryValue}>{preview.blockedCount}</span>
+            </div>
+            <div className={styles.summaryCell}>
+              <span className={styles.summaryLabel}>No-Op</span>
+              <span className={styles.summaryValue}>{preview.noopCount}</span>
+            </div>
+          </div>
+
           <p className={styles.meta}>
-            Planned: <strong>{preview.executableCount}</strong> executable,{" "}
-            <strong>{preview.blockedCount}</strong> blocked,{" "}
-            <strong>{preview.noopCount}</strong> no-op. Initial baseline and pre-operation snapshots are captured automatically before modifying each package.
+            Immutable Initial Toolkit Baseline and Pre-Operation snapshots are saved to local SQLite automatically before modifying each package. Every executed change is verified live via <code>dumpsys package</code>.
           </p>
 
           {preview.warnings.length > 0 && (
@@ -68,23 +90,22 @@ export function OperationPreviewDialog({
               >
                 <div className={styles.itemHeader}>
                   <span className={styles.mono}>{item.packageName}</span>
-                  <div>
-                    <StatusBadge
-                      tone={
-                        item.isNoop
-                          ? "neutral"
-                          : item.allowed
-                            ? "accent"
-                            : "error"
-                      }
-                    >
-                      {item.isNoop
-                        ? "No-Op"
+                  <StatusBadge
+                    tone={
+                      item.isNoop
+                        ? "neutral"
                         : item.allowed
-                          ? formatActionName(item.action)
-                          : "Blocked"}
-                    </StatusBadge>
-                  </div>
+                          ? "accent"
+                          : "error"
+                    }
+                    icon={!item.allowed ? <IconLock size={12} /> : undefined}
+                  >
+                    {item.isNoop
+                      ? "No-Op"
+                      : item.allowed
+                        ? formatActionName(item.action)
+                        : "Blocked"}
+                  </StatusBadge>
                 </div>
                 {item.messages.map((msg, idx) => (
                   <p key={`${idx}-${msg}`} className={styles.note}>

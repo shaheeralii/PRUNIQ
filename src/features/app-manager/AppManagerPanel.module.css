@@ -6,9 +6,9 @@
 
 .card {
   background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 15px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -24,34 +24,41 @@
 
 .heading {
   margin: 0;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 600;
 }
 
 .subHeading {
   margin: 4px 0 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  border-top: 1px solid var(--bg-subtle);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-subtle);
   padding-top: 10px;
 }
 
 .statsRow {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.statsRow strong {
+  color: var(--text-primary);
 }
 
 .ruleDbBar {
   font-size: 12px;
   color: var(--text-secondary);
-  background: var(--bg-subtle);
-  border: 1px solid var(--border-default);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
-  padding: 6px 10px;
+  padding: 7px 11px;
 }
 
 .filtersRow {
@@ -69,13 +76,13 @@
   flex-wrap: wrap;
   padding: 10px 12px;
   background: var(--accent-soft);
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--accent-border);
   border-radius: var(--radius);
 }
 
 .actionRow {
   display: flex;
-  gap: 8px;
+  gap: 7px;
   flex-wrap: wrap;
   align-items: center;
 }
@@ -86,48 +93,64 @@
   padding: 7px 10px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
-  font-size: 13px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
 }
 
 .select {
   padding: 7px 10px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
-  background: var(--bg-surface);
-  font-size: 13px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12.5px;
 }
 
 .checkboxLabel {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-secondary);
   cursor: pointer;
 }
 
 .button {
-  padding: 7px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
-  background: var(--bg-surface);
+  background: var(--bg-elevated);
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .button:hover:not(:disabled) {
   background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 .buttonPrimary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #ffffff;
+  color: #04130d;
+  font-weight: 600;
 }
 
 .buttonPrimary:hover:not(:disabled) {
   background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: #ffffff;
 }
 
 .buttonDanger {
@@ -137,22 +160,22 @@
 }
 
 .buttonDanger:hover:not(:disabled) {
-  background: #fee2e2;
+  background: rgba(239, 68, 68, 0.22);
 }
 
 .button:disabled {
-  opacity: 0.5;
+  opacity: 0.42;
   cursor: not-allowed;
 }
 
 .splitLayout {
   display: grid;
-  grid-template-columns: minmax(0, 1.85fr) minmax(320px, 1fr);
+  grid-template-columns: minmax(0, 1.75fr) minmax(340px, 380px);
   gap: 16px;
   align-items: start;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1040px) {
   .splitLayout {
     grid-template-columns: 1fr;
   }
@@ -160,37 +183,43 @@
 
 .tableWrap {
   background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   overflow: auto;
-  max-height: 540px;
+  max-height: calc(100vh - 300px);
+  min-height: 320px;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .table th {
   position: sticky;
   top: 0;
-  background: var(--bg-subtle);
+  z-index: 2;
+  background: var(--bg-elevated);
   text-align: left;
-  padding: 8px 10px;
+  padding: 9px 10px;
   border-bottom: 1px solid var(--border-default);
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 .table td {
   padding: 8px 10px;
-  border-bottom: 1px solid var(--bg-subtle);
-  vertical-align: top;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
 }
 
 .rowSelectable {
   cursor: pointer;
+  transition: background var(--transition-fast);
 }
 
 .rowSelectable:hover {
@@ -203,6 +232,7 @@
 
 .pkgLabel {
   font-weight: 600;
+  color: var(--text-primary);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -212,17 +242,31 @@
 .pkgId {
   display: block;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-secondary);
   word-break: break-all;
 }
 
+.inspectorCard {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 15px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+}
+
 .kvGrid {
   display: grid;
-  grid-template-columns: 128px 1fr;
+  grid-template-columns: 118px 1fr;
   gap: 6px 10px;
   margin: 0;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .kvGrid dt {
@@ -232,6 +276,7 @@
 .kvGrid dd {
   margin: 0;
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   word-break: break-word;
 }
 
@@ -245,10 +290,10 @@
 }
 
 .evidenceItem {
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   padding: 8px 10px;
-  background: var(--bg-subtle);
+  background: var(--bg-elevated);
   font-size: 12px;
   display: flex;
   flex-direction: column;
@@ -262,11 +307,12 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .resultItem {
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
   border-radius: var(--radius);
   padding: 8px 10px;
   display: flex;
@@ -277,5 +323,5 @@
 .muted {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 12.5px;
 }

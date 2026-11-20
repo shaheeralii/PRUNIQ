@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { OperationPreviewDialog } from "./components/dialogs/OperationPreviewDialog";
 import { AlertBanner } from "./components/feedback/AlertBanner";
+import {
+  IconActivity,
+  IconApps,
+  IconCpu,
+  IconDevices,
+  IconHistory,
+  IconSettings,
+  IconShield,
+} from "./components/shared/Icons";
 import { StatusBadge } from "./components/shared/StatusBadge";
 import { AppManagerPanel } from "./features/app-manager/AppManagerPanel";
 import { DeviceInfoPanel } from "./features/device-info/DeviceInfoPanel";
@@ -79,6 +88,15 @@ const DEFAULT_SETTINGS: AppSettings = {
   customAdbPath: null,
   autoScanOnSelect: false,
   logLevel: "standard",
+};
+
+const SECTION_TITLES: Record<ActiveTab, string> = {
+  devices: "Devices & ADB Connection",
+  "device-info": "Device Specifications & Capabilities",
+  apps: "Installed Applications",
+  diagnostics: "Memory & Storage Diagnostics",
+  history: "Operation History & Recovery",
+  settings: "Settings & Redacted Diagnostics",
 };
 
 export function App() {
@@ -548,228 +566,353 @@ export function App() {
   const uncertainHistoryCount = history.filter(
     (op) => op.status === "uncertain_timeout",
   ).length;
+  const targetModelLabel =
+    [deviceSpecs?.identification.manufacturer, deviceSpecs?.identification.model]
+      .filter(Boolean)
+      .join(" ") || selectedSerial;
 
   return (
-    <main className={styles.shell}>
-      <header className={styles.header}>
-        <div className={styles.titleGroup}>
-          <h1 className={styles.title}>Android Debloating Toolkit</h1>
-          <StatusBadge tone="neutral">
-            Phase 6 â€” Memory & Storage Diagnostics
-          </StatusBadge>
+    <div className={styles.appFrame}>
+      <header className={styles.topBar}>
+        <div className={styles.brandGroup}>
+          <span className={styles.brandMark}>ADT</span>
+          <h1 className={styles.brandTitle}>Android Debloating Toolkit</h1>
+          <span className={styles.topDivider} aria-hidden="true" />
+          <span className={styles.activeSectionLabel}>
+            {SECTION_TITLES[activeTab]}
+          </span>
         </div>
-        <div className={styles.statusBar}>
+
+        <div className={styles.topStatusGroup}>
           <StatusBadge tone={adbStatus?.available ? "ok" : "warn"}>
             {adbStatus?.available
               ? `ADB ${adbStatus.adbVersion ?? "ready"}`
               : "ADB unavailable"}
           </StatusBadge>
-          <StatusBadge tone={selectedSerial ? "accent" : "neutral"}>
-            {selectedSerial ? `Target: ${selectedSerial}` : "No device selected"}
-          </StatusBadge>
+          {selectedSerial ? (
+            <StatusBadge tone="accent" icon={<IconShield size={12} />}>
+              {targetModelLabel}
+              {deviceSpecs?.identification.androidVersion
+                ? ` · Android ${deviceSpecs.identification.androidVersion}`
+                : ""}
+              {selectedUserId !== null ? ` · User ${selectedUserId}` : ""}
+            </StatusBadge>
+          ) : (
+            <StatusBadge tone="neutral">No device selected</StatusBadge>
+          )}
         </div>
       </header>
 
-      <nav className={styles.tabs} aria-label="Workspace sections">
-        <button
-          type="button"
-          className={`${styles.tabButton} ${
-            activeTab === "devices" ? styles.tabButtonActive : ""
-          }`}
-          onClick={() => setActiveTab("devices")}
-        >
-          1. Devices & ADB ({devices.length})
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${
-            activeTab === "device-info" ? styles.tabButtonActive : ""
-          }`}
-          disabled={!selectedSerial}
-          onClick={() => setActiveTab("device-info")}
-        >
-          2. Device Info & Capabilities
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${
-            activeTab === "apps" ? styles.tabButtonActive : ""
-          }`}
-          disabled={!selectedSerial}
-          onClick={() => setActiveTab("apps")}
-        >
-          3. Installed Applications
-          {inventory ? ` (${inventory.totalCount})` : ""}
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${
-            activeTab === "diagnostics" ? styles.tabButtonActive : ""
-          }`}
-          disabled={!selectedSerial}
-          onClick={() => setActiveTab("diagnostics")}
-        >
-          4. Memory & Storage
-          {memorySnapshots.length > 0 ? ` (${memorySnapshots.length})` : ""}
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${
-            activeTab === "history" ? styles.tabButtonActive : ""
-          }`}
-          onClick={() => {
-            setActiveTab("history");
-            void refreshHistory();
-          }}
-        >
-          5. History & Recovery ({history.length}
-          {uncertainHistoryCount > 0 ? ` Â· ${uncertainHistoryCount} uncertain` : ""})
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${
-            activeTab === "settings" ? styles.tabButtonActive : ""
-          }`}
-          onClick={() => setActiveTab("settings")}
-        >
-          6. Settings & Diagnostics
-        </button>
-      </nav>
+      <aside className={styles.sidebar} aria-label="Workspace navigation">
+        <div>
+          <p className={styles.navSectionLabel}>Workspace</p>
+          <nav className={styles.navList}>
+            <button
+              type="button"
+              className={`${styles.navButton} ${
+                activeTab === "devices" ? styles.navButtonActive : ""
+              }`}
+              onClick={() => setActiveTab("devices")}
+            >
+              <span className={styles.navLabelGroup}>
+                <IconDevices />
+                <span>Devices & ADB</span>
+              </span>
+              <span className={styles.navCount}>{devices.length}</span>
+            </button>
 
-      {loadingMessage && (
-        <div className={styles.loadingBar} role="status">
-          {loadingMessage}
+            <button
+              type="button"
+              className={`${styles.navButton} ${
+                activeTab === "device-info" ? styles.navButtonActive : ""
+              }`}
+              disabled={!selectedSerial}
+              onClick={() => setActiveTab("device-info")}
+            >
+              <span className={styles.navLabelGroup}>
+                <IconCpu />
+                <span>Device Specs</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className={`${styles.navButton} ${
+                activeTab === "apps" ? styles.navButtonActive : ""
+              }`}
+              disabled={!selectedSerial}
+              onClick={() => setActiveTab("apps")}
+            >
+              <span className={styles.navLabelGroup}>
+                <IconApps />
+                <span>Applications</span>
+              </span>
+              {inventory && (
+                <span className={styles.navCount}>{inventory.totalCount}</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className={`${styles.navButton} ${
+                activeTab === "diagnostics" ? styles.navButtonActive : ""
+              }`}
+              disabled={!selectedSerial}
+              onClick={() => setActiveTab("diagnostics")}
+            >
+              <span className={styles.navLabelGroup}>
+                <IconActivity />
+                <span>Memory & Storage</span>
+              </span>
+              {memorySnapshots.length > 0 && (
+                <span className={styles.navCount}>{memorySnapshots.length}</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              className={`${styles.navButton} ${
+                activeTab === "history" ? styles.navButtonActive : ""
+              }`}
+              onClick={() => {
+                setActiveTab("history");
+                void refreshHistory();
+              }}
+            >
+              <span className={styles.navLabelGroup}>
+                <IconHistory />
+                <span>History & Undo</span>
+              </span>
+              <span
+                className={`${styles.navCount} ${
+                  uncertainHistoryCount > 0 ? styles.navCountWarn : ""
+                }`}
+              >
+                {uncertainHistoryCount > 0
+                  ? `${uncertainHistoryCount}!`
+                  : history.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className={`${styles.navButton} ${
+                activeTab === "settings" ? styles.navButtonActive : ""
+              }`}
+              onClick={() => setActiveTab("settings")}
+            >
+              <span className={styles.navLabelGroup}>
+                <IconSettings />
+                <span>Settings</span>
+              </span>
+            </button>
+          </nav>
         </div>
-      )}
 
-      {error && (
-        <AlertBanner
-          tone="error"
-          title={error.message}
-          detail={error.guidance}
-          onDismiss={() => setError(null)}
-        />
-      )}
+        <section className={styles.targetCard} aria-label="Active target summary">
+          <div className={styles.targetCardHeader}>
+            <span className={styles.targetHeading}>Active Target</span>
+            <span
+              className={`${styles.targetDot} ${
+                selectedSerial ? styles.targetDotActive : ""
+              }`}
+              aria-hidden="true"
+            />
+          </div>
+          {selectedSerial ? (
+            <>
+              <span className={styles.targetModel}>{targetModelLabel}</span>
+              <span className={styles.targetMono}>{selectedSerial}</span>
+              <span className={styles.targetMeta}>
+                Scope:{" "}
+                {selectedUserId !== null
+                  ? `Android User ${selectedUserId}`
+                  : "User unselected"}
+              </span>
+              <span className={styles.targetMeta}>
+                Safety guard:{" "}
+                {protections
+                  ? protections.launcherDetectionUncertain ||
+                    protections.keyboardDetectionUncertain
+                    ? "Conservative fallback"
+                    : "Active"
+                  : "Pending"}
+              </span>
+            </>
+          ) : (
+            <span className={styles.targetMeta}>
+              Connect and select an authorized Android device to begin.
+            </span>
+          )}
+        </section>
+      </aside>
 
-      {activeTab === "devices" && (
-        <AdbDevicePanel
-          customAdbPath={customAdbPath}
-          onCustomAdbPathChange={setCustomAdbPath}
-          adbStatus={adbStatus}
-          devices={devices}
-          selectedSerial={selectedSerial}
-          busy={busy}
-          onCheckAdb={() => void handleCheckAdb(customAdbPath)}
-          onRefreshDevices={() => void handleRefreshDevices()}
-          onSelectDevice={(device) => void handleSelectDevice(device)}
-        />
-      )}
+      <main className={styles.workspace}>
+        {loadingMessage && (
+          <div className={styles.loadingBar} role="status">
+            {loadingMessage}
+          </div>
+        )}
 
-      {activeTab === "device-info" && (
-        <DeviceInfoPanel
-          selectedSerial={selectedSerial}
-          specs={deviceSpecs}
-          capabilities={capabilities}
-          selectedUserId={selectedUserId}
-          onSelectUserId={(uid) => {
-            setSelectedUserId(uid);
-            setInventory(null);
-            setRecommendations({});
-            setSelectedPackageName(null);
-            setPackageDetails(null);
-            if (selectedSerial && uid !== null) {
-              void getPackageSnapshots(selectedSerial, uid).then(setSnapshots);
-            } else {
-              setSnapshots({});
+        {error && (
+          <AlertBanner
+            tone="error"
+            title={error.message}
+            detail={error.guidance}
+            onDismiss={() => setError(null)}
+          />
+        )}
+
+        {activeTab === "devices" && (
+          <AdbDevicePanel
+            customAdbPath={customAdbPath}
+            onCustomAdbPathChange={setCustomAdbPath}
+            adbStatus={adbStatus}
+            devices={devices}
+            selectedSerial={selectedSerial}
+            busy={busy}
+            onCheckAdb={() => void handleCheckAdb(customAdbPath)}
+            onRefreshDevices={() => void handleRefreshDevices()}
+            onSelectDevice={(device) => void handleSelectDevice(device)}
+          />
+        )}
+
+        {activeTab === "device-info" && (
+          <DeviceInfoPanel
+            selectedSerial={selectedSerial}
+            specs={deviceSpecs}
+            capabilities={capabilities}
+            selectedUserId={selectedUserId}
+            onSelectUserId={(uid) => {
+              setSelectedUserId(uid);
+              setInventory(null);
+              setRecommendations({});
+              setSelectedPackageName(null);
+              setPackageDetails(null);
+              if (selectedSerial && uid !== null) {
+                void getPackageSnapshots(selectedSerial, uid).then(setSnapshots);
+              } else {
+                setSnapshots({});
+              }
+            }}
+            busy={busy}
+            onRefresh={() => {
+              if (selectedSerial) {
+                void loadDeviceContext(selectedSerial, false);
+              }
+            }}
+          />
+        )}
+
+        {activeTab === "apps" && (
+          <AppManagerPanel
+            selectedSerial={selectedSerial}
+            selectedUserId={selectedUserId}
+            defaultStateSupported={capabilityFlags.pmDefaultStateSupported}
+            inventory={inventory}
+            ruleDbSummary={ruleDbSummary}
+            recommendations={recommendations}
+            protections={protections}
+            snapshots={snapshots}
+            lastOperationResult={lastOperationResult}
+            selectedPackageName={selectedPackageName}
+            packageDetails={packageDetails}
+            busy={busy}
+            inspectingPackage={inspectingPackage}
+            onScanPackages={() => void handleScanPackages()}
+            onSelectPackage={handleSelectPackage}
+            onInspectPackageDetails={(pkgName) =>
+              void handleInspectPackageDetails(pkgName)
             }
-          }}
-          busy={busy}
-          onRefresh={() => {
-            if (selectedSerial) {
-              void loadDeviceContext(selectedSerial, false);
-            }
-          }}
-        />
-      )}
+            onRequestOperations={(items) => void handleRequestOperations(items)}
+            onDismissLastResult={() => setLastOperationResult(null)}
+          />
+        )}
 
-      {activeTab === "apps" && (
-        <AppManagerPanel
-          selectedSerial={selectedSerial}
-          selectedUserId={selectedUserId}
-          defaultStateSupported={capabilityFlags.pmDefaultStateSupported}
-          inventory={inventory}
-          ruleDbSummary={ruleDbSummary}
-          recommendations={recommendations}
-          protections={protections}
-          snapshots={snapshots}
-          lastOperationResult={lastOperationResult}
-          selectedPackageName={selectedPackageName}
-          packageDetails={packageDetails}
-          busy={busy}
-          inspectingPackage={inspectingPackage}
-          onScanPackages={() => void handleScanPackages()}
-          onSelectPackage={handleSelectPackage}
-          onInspectPackageDetails={(pkgName) =>
-            void handleInspectPackageDetails(pkgName)
-          }
-          onRequestOperations={(items) => void handleRequestOperations(items)}
-          onDismissLastResult={() => setLastOperationResult(null)}
-        />
-      )}
+        {activeTab === "diagnostics" && (
+          <DiagnosticsPanel
+            selectedSerial={selectedSerial}
+            snapshots={memorySnapshots}
+            comparison={memoryComparison}
+            storageDashboard={storageDashboard}
+            performanceMetrics={performanceMetrics}
+            busy={busy}
+            onCaptureMemory={(label) => void handleCaptureMemory(label)}
+            onCompareSnapshots={(b, a) => void handleCompareMemory(b, a)}
+            onRefreshStorage={() => void handleRefreshStorage()}
+          />
+        )}
 
-      {activeTab === "diagnostics" && (
-        <DiagnosticsPanel
-          selectedSerial={selectedSerial}
-          snapshots={memorySnapshots}
-          comparison={memoryComparison}
-          storageDashboard={storageDashboard}
-          performanceMetrics={performanceMetrics}
-          busy={busy}
-          onCaptureMemory={(label) => void handleCaptureMemory(label)}
-          onCompareSnapshots={(b, a) => void handleCompareMemory(b, a)}
-          onRefreshStorage={() => void handleRefreshStorage()}
-        />
-      )}
+        {activeTab === "history" && (
+          <HistoryPanel
+            selectedSerial={selectedSerial}
+            selectedUserId={selectedUserId}
+            history={history}
+            statusFilter={historyStatusFilter}
+            searchQuery={historySearch}
+            scopeAllDevices={historyAllDevices}
+            busy={busy}
+            reconcilingId={reconcilingId}
+            onStatusFilterChange={(val) => {
+              setHistoryStatusFilter(val);
+              void refreshHistory({ statusFilter: val });
+            }}
+            onSearchChange={(val) => {
+              setHistorySearch(val);
+              void refreshHistory({ search: val });
+            }}
+            onScopeChange={(allDevices) => {
+              setHistoryAllDevices(allDevices);
+              void refreshHistory({ allDevices });
+            }}
+            onRefresh={() => void refreshHistory()}
+            onReconcile={(opId) => void handleReconcileOperation(opId)}
+            onRequestPackageAction={(items) => void handleRequestOperations(items)}
+            onClearHistory={() => void handleClearHistory()}
+          />
+        )}
 
-      {activeTab === "history" && (
-        <HistoryPanel
-          selectedSerial={selectedSerial}
-          selectedUserId={selectedUserId}
-          history={history}
-          statusFilter={historyStatusFilter}
-          searchQuery={historySearch}
-          scopeAllDevices={historyAllDevices}
-          busy={busy}
-          reconcilingId={reconcilingId}
-          onStatusFilterChange={(val) => {
-            setHistoryStatusFilter(val);
-            void refreshHistory({ statusFilter: val });
-          }}
-          onSearchChange={(val) => {
-            setHistorySearch(val);
-            void refreshHistory({ search: val });
-          }}
-          onScopeChange={(allDevices) => {
-            setHistoryAllDevices(allDevices);
-            void refreshHistory({ allDevices });
-          }}
-          onRefresh={() => void refreshHistory()}
-          onReconcile={(opId) => void handleReconcileOperation(opId)}
-          onRequestPackageAction={(items) => void handleRequestOperations(items)}
-          onClearHistory={() => void handleClearHistory()}
-        />
-      )}
+        {activeTab === "settings" && (
+          <SettingsPanel
+            settings={settings}
+            ruleDbSummary={ruleDbSummary}
+            diagnosticBundle={diagnosticBundle}
+            busy={busy}
+            onSaveSettings={(next) => void handleSaveSettings(next)}
+            onGenerateDiagnostics={() => void handleGenerateDiagnostics()}
+          />
+        )}
+      </main>
 
-      {activeTab === "settings" && (
-        <SettingsPanel
-          settings={settings}
-          ruleDbSummary={ruleDbSummary}
-          diagnosticBundle={diagnosticBundle}
-          busy={busy}
-          onSaveSettings={(next) => void handleSaveSettings(next)}
-          onGenerateDiagnostics={() => void handleGenerateDiagnostics()}
-        />
-      )}
+      <footer className={styles.statusBar}>
+        <div className={styles.statusCluster}>
+          <span>
+            ADB: {adbStatus?.available ? adbStatus.adbVersion ?? "ready" : "missing"}
+          </span>
+          <span className={styles.statusSep}>|</span>
+          <span>Storage: Local SQLite (Offline-First)</span>
+          {ruleDbSummary && (
+            <>
+              <span className={styles.statusSep}>|</span>
+              <span>
+                Rules: {ruleDbSummary.databaseVersion} ({ruleDbSummary.verifiedRules}{" "}
+                verified)
+              </span>
+            </>
+          )}
+        </div>
+        <div className={styles.statusCluster}>
+          {performanceMetrics?.lastPackageScanMs !== null &&
+          performanceMetrics?.lastPackageScanMs !== undefined ? (
+            <span>
+              Last scan: {performanceMetrics.lastPackageScanMs} ms (
+              {performanceMetrics.lastPackageCount ?? 0} pkgs)
+            </span>
+          ) : (
+            <span>No scan measured yet</span>
+          )}
+        </div>
+      </footer>
 
       {operationPreview && (
         <OperationPreviewDialog
@@ -782,7 +925,7 @@ export function App() {
           onConfirm={() => void handleConfirmOperations()}
         />
       )}
-    </main>
+    </div>
   );
 }
 

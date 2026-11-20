@@ -6,9 +6,9 @@
 
 .card {
   background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -24,7 +24,7 @@
 
 .heading {
   margin: 0;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 600;
 }
 
@@ -41,43 +41,59 @@
   padding: 7px 10px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
-  font-size: 13px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.input::placeholder {
+  color: var(--text-muted);
 }
 
 .select {
   padding: 7px 10px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
-  background: var(--bg-surface);
-  font-size: 13px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12.5px;
 }
 
 .button {
-  padding: 7px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
-  background: var(--bg-surface);
+  background: var(--bg-elevated);
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .button:hover:not(:disabled) {
   background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 .buttonPrimary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #ffffff;
+  color: #04130d;
+  font-weight: 600;
 }
 
 .buttonPrimary:hover:not(:disabled) {
   background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: #ffffff;
 }
 
 .button:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -88,32 +104,43 @@
 }
 
 .metricBox {
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   padding: 10px 12px;
-  background: var(--bg-subtle);
+  background: var(--bg-elevated);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .metricLabel {
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
 }
 
 .metricValue {
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.deltaPositive {
+  color: var(--status-ok-text);
+}
+
+.deltaNegative {
+  color: var(--status-warn-text);
 }
 
 .progressTrack {
   width: 100%;
-  height: 10px;
+  height: 9px;
   border-radius: 999px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border-default);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
   overflow: hidden;
 }
 
@@ -125,36 +152,40 @@
 .tableWrap {
   overflow: auto;
   max-height: 300px;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .table th {
   position: sticky;
   top: 0;
-  background: var(--bg-subtle);
+  background: var(--bg-elevated);
   text-align: left;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border-default);
-  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
 }
 
 .table td {
   padding: 7px 10px;
-  border-bottom: 1px solid var(--bg-subtle);
+  border-bottom: 1px solid var(--border-subtle);
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .muted {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .notes {

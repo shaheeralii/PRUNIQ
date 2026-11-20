@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertBanner } from "../../components/feedback/AlertBanner";
+import { IconRefresh } from "../../components/shared/Icons";
 import { StatusBadge } from "../../components/shared/StatusBadge";
 import { formatKb } from "../../lib/format";
 import type {
@@ -79,7 +80,7 @@ export function DiagnosticsPanel({
       <section className={styles.card}>
         <h2 className={styles.heading}>Memory & Storage Diagnostics</h2>
         <p className={styles.muted}>
-          Select an authorized device from the Devices & ADB tab to run read-only RAM snapshots, process inspection, and storage diagnostics.
+          Select an authorized device from Devices & ADB to run read-only RAM snapshots, process inspection, and storage diagnostics.
         </p>
       </section>
     );
@@ -101,23 +102,23 @@ export function DiagnosticsPanel({
               Read-Only RAM Diagnostics & Snapshots
             </h2>
             <p className={styles.muted}>
-              Captures /proc/meminfo, dumpsys meminfo, and running process counts without killing or force-stopping any processes.
+              Captures <code>/proc/meminfo</code>, <code>dumpsys meminfo</code>, and process counts without killing or force-stopping any processes.
             </p>
           </div>
-          <StatusBadge tone="neutral">Read-Only</StatusBadge>
+          <StatusBadge tone="accent">Read-Only</StatusBadge>
         </div>
 
         <AlertBanner
           tone="info"
           title="Interpreting Android RAM accurately"
-          detail="Android intentionally uses free RAM for caching so apps resume faster. Memory usage fluctuates naturally, lower free RAM does not automatically mean slower performance, and disabling packages does not guarantee higher free RAM."
+          detail="Android intentionally uses free RAM for caching so apps resume faster. Memory usage fluctuates naturally, lower free RAM does not automatically indicate slower performance, and disabling packages does not guarantee higher free RAM."
         />
 
         <div className={styles.row}>
           <input
             type="text"
             className={styles.input}
-            placeholder={`Optional label (e.g., Snapshot ${snapshots.length + 1} â€” Baseline)`}
+            placeholder={`Optional label (e.g., Snapshot ${snapshots.length + 1} — Baseline)`}
             value={labelInput}
             onChange={(e) => setLabelInput(e.target.value)}
             aria-label="Memory snapshot label"
@@ -140,8 +141,8 @@ export function DiagnosticsPanel({
         {latestSnapshot && (
           <>
             <p className={styles.muted}>
-              Latest snapshot: <strong>{latestSnapshot.label}</strong> Â·{" "}
-              {new Date(latestSnapshot.capturedAtMs).toLocaleTimeString()} Â·
+              Latest snapshot: <strong>{latestSnapshot.label}</strong> ·{" "}
+              {new Date(latestSnapshot.capturedAtMs).toLocaleTimeString()} ·
               probe time {latestSnapshot.captureDurationMs} ms
             </p>
 
@@ -239,7 +240,17 @@ export function DiagnosticsPanel({
               <div className={styles.metricsGrid}>
                 <div className={styles.metricBox}>
                   <span className={styles.metricLabel}>Available Delta</span>
-                  <span className={styles.metricValue}>
+                  <span
+                    className={`${styles.metricValue} ${
+                      comparison.availableDeltaKb !== null &&
+                      comparison.availableDeltaKb > 0
+                        ? styles.deltaPositive
+                        : comparison.availableDeltaKb !== null &&
+                            comparison.availableDeltaKb < 0
+                          ? styles.deltaNegative
+                          : ""
+                    }`}
+                  >
                     {formatSignedKb(comparison.availableDeltaKb)}
                   </span>
                 </div>
@@ -284,7 +295,17 @@ export function DiagnosticsPanel({
                           <td>{d.processName}</td>
                           <td>{formatKb(d.beforePssKb)}</td>
                           <td>{formatKb(d.afterPssKb)}</td>
-                          <td>{formatSignedKb(d.deltaKb)}</td>
+                          <td
+                            className={
+                              d.deltaKb < 0
+                                ? styles.deltaPositive
+                                : d.deltaKb > 0
+                                  ? styles.deltaNegative
+                                  : ""
+                            }
+                          >
+                            {formatSignedKb(d.deltaKb)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -306,7 +327,7 @@ export function DiagnosticsPanel({
         <section className={styles.card}>
           <div className={styles.toolbar}>
             <h2 className={styles.heading}>
-              Background Process Overview (Top PSS from dumpsys meminfo)
+              Background Process Overview (Top PSS)
             </h2>
             <input
               type="search"
@@ -330,7 +351,7 @@ export function DiagnosticsPanel({
                 {visibleTopProcesses.map((proc) => (
                   <tr key={`${proc.processName}-${proc.pid ?? "none"}`}>
                     <td>{proc.processName}</td>
-                    <td>{proc.pid ?? "â€”"}</td>
+                    <td>{proc.pid ?? "—"}</td>
                     <td>{formatKb(proc.pssKb)}</td>
                   </tr>
                 ))}
@@ -345,7 +366,7 @@ export function DiagnosticsPanel({
           <div>
             <h2 className={styles.heading}>Storage Diagnostics Dashboard</h2>
             <p className={styles.muted}>
-              Inspects internal user storage (/data) and mounted partitions via read-only df -k.
+              Inspects internal user storage (<code>/data</code>) and mounted partitions via read-only <code>df -k</code>.
             </p>
           </div>
           <button
@@ -354,7 +375,10 @@ export function DiagnosticsPanel({
             disabled={busy}
             onClick={onRefreshStorage}
           >
-            {storageDashboard ? "Refresh Storage" : "Load Storage Diagnostics"}
+            <IconRefresh size={13} />
+            <span>
+              {storageDashboard ? "Refresh Storage" : "Load Storage Diagnostics"}
+            </span>
           </button>
         </div>
 
@@ -390,7 +414,7 @@ export function DiagnosticsPanel({
                   {formatKb(storageDashboard.dataPartition.usedKb)} (
                   {storageDashboard.dataPartition.usePercent !== null
                     ? `${storageDashboard.dataPartition.usePercent}%`
-                    : "â€”"}
+                    : "—"}
                   )
                 </span>
               </div>
@@ -403,7 +427,10 @@ export function DiagnosticsPanel({
             </div>
 
             {storageDashboard.dataPartition.usePercent !== null && (
-              <div className={styles.progressTrack} aria-label="Internal storage usage">
+              <div
+                className={styles.progressTrack}
+                aria-label="Internal storage usage"
+              >
                 <div
                   className={styles.progressFill}
                   style={{
@@ -433,7 +460,9 @@ export function DiagnosticsPanel({
                         <td>{formatKb(p.totalKb)}</td>
                         <td>{formatKb(p.usedKb)}</td>
                         <td>{formatKb(p.availableKb)}</td>
-                        <td>{p.usePercent !== null ? `${p.usePercent}%` : "â€”"}</td>
+                        <td>
+                          {p.usePercent !== null ? `${p.usePercent}%` : "—"}
+                        </td>
                         <td>
                           {p.isReadOnlySystemPartition
                             ? "Read-only system"
@@ -452,7 +481,7 @@ export function DiagnosticsPanel({
       <section className={styles.card}>
         <h2 className={styles.heading}>Measured Session Performance</h2>
         <p className={styles.muted}>
-          Actual measured ADB round-trip durations recorded on this device during the current session (never fabricated).
+          Actual measured ADB round-trip durations recorded on this device during the current session.
         </p>
         <div className={styles.metricsGrid}>
           <div className={styles.metricBox}>

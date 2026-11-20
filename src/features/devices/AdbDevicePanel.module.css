@@ -6,9 +6,9 @@
 
 .card {
   background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -24,7 +24,7 @@
 
 .heading {
   margin: 0;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 600;
 }
 
@@ -41,36 +41,51 @@
   padding: 7px 10px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
+  background: var(--bg-input);
+  color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 12.5px;
+}
+
+.input::placeholder {
+  color: var(--text-muted);
 }
 
 .button {
-  padding: 7px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
-  background: var(--bg-surface);
+  background: var(--bg-elevated);
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .button:hover:not(:disabled) {
   background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 .buttonPrimary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #ffffff;
+  color: #04130d;
+  font-weight: 600;
 }
 
 .buttonPrimary:hover:not(:disabled) {
   background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: #ffffff;
 }
 
 .button:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -79,7 +94,7 @@
   grid-template-columns: 160px 1fr;
   gap: 6px 12px;
   margin: 0;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .kvGrid dt {
@@ -92,6 +107,32 @@
   word-break: break-all;
 }
 
+.onboarding {
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboardingTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.checklist {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .deviceList {
   list-style: none;
   margin: 0;
@@ -102,34 +143,37 @@
 }
 
 .deviceItem {
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
   border-radius: var(--radius);
-  padding: 10px 12px;
+  padding: 12px 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  transition: border-color var(--transition-fast);
 }
 
 .deviceSelected {
-  border-color: var(--accent);
+  border-color: var(--accent-border);
   background: var(--accent-soft);
 }
 
 .deviceMeta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .serial {
   font-family: var(--font-mono);
   font-weight: 600;
+  font-size: 13px;
 }
 
 .muted {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 12.5px;
 }
