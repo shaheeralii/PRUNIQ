@@ -2,6 +2,7 @@ pub mod adb;
 pub mod android;
 pub mod commands;
 pub mod core;
+pub mod operations;
 pub mod packages;
 pub mod rules;
 
@@ -12,6 +13,8 @@ use std::time::{Duration, Instant};
 use adb::process_runner::TokioProcessRunner;
 use adb::service::AdbService;
 use core::models::AdbDevice;
+use operations::locks::DeviceLockManager;
+use operations::snapshots::SnapshotStore;
 use rules::engine::RuleEngine;
 
 /// Maximum age for the cached read-only device discovery snapshot before
@@ -30,6 +33,8 @@ pub struct AppState {
     pub service: AdbService<TokioProcessRunner>,
     pub cache: RwLock<SessionCache>,
     pub rule_engine: RuleEngine,
+    pub device_locks: DeviceLockManager,
+    pub snapshots: RwLock<SnapshotStore>,
 }
 
 impl Default for AppState {
@@ -39,6 +44,8 @@ impl Default for AppState {
             cache: RwLock::new(SessionCache::default()),
             rule_engine: RuleEngine::from_embedded()
                 .expect("bundled package-rules/rules.json must be valid"),
+            device_locks: DeviceLockManager::new(),
+            snapshots: RwLock::new(SnapshotStore::new()),
         }
     }
 }
@@ -57,6 +64,11 @@ pub fn run() {
             commands::packages::inspect_package_details,
             commands::rules::get_rule_database_summary,
             commands::rules::evaluate_recommendations,
+            commands::operations::get_device_protections,
+            commands::operations::preview_package_operations,
+            commands::operations::execute_package_operations,
+            commands::operations::get_package_snapshots,
+            commands::operations::get_session_operations,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Android Debloating Toolkit");

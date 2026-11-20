@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AlertBanner } from "../../components/feedback/AlertBanner";
-import { StatusBadge } from "../../components/shared/StatusBadge";
+import { StatusBadge, type BadgeTone } from "../../components/shared/StatusBadge";
 import {
   filterInstalledPackages,
   formatConfidence,
@@ -14,6 +14,15 @@ import {
   riskTone,
   type ClientPackageFilter,
 } from "../../lib/format";
+import type {
+  BulkOperationResult,
+  DeviceProtectionProfile,
+  OperationStatus,
+  PackageAction,
+  PackageActionRequest,
+  PackageSnapshotStatus,
+  RestorationFidelity,
+} from "../../types/operations";
 import type {
   EffectivePackageState,
   InstallPartition,
@@ -32,9 +41,13 @@ import styles from "./AppManagerPanel.module.css";
 interface AppManagerPanelProps {
   selectedSerial: string | null;
   selectedUserId: number | null;
+  defaultStateSupported: boolean;
   inventory: PackageInventory | null;
   ruleDbSummary: RuleDatabaseSummary | null;
   recommendations: Record<string, PackageRecommendation>;
+  protections: DeviceProtectionProfile | null;
+  snapshots: Record<string, PackageSnapshotStatus>;
+  lastOperationResult: BulkOperationResult | null;
   selectedPackageName: string | null;
   packageDetails: PackageDetails | null;
   busy: boolean;
@@ -42,6 +55,8 @@ interface AppManagerPanelProps {
   onScanPackages: () => void;
   onSelectPackage: (pkg: InstalledPackage) => void;
   onInspectPackageDetails: (packageName: string) => void;
+  onRequestOperations: (items: PackageActionRequest[]) => void;
+  onDismissLastResult: () => void;
 }
 
 const DEFAULT_FILTER: ClientPackageFilter = {
@@ -53,12 +68,72 @@ const DEFAULT_FILTER: ClientPackageFilter = {
   updatedSystemOnly: false,
 };
 
+function isProtectedInProfile(
+  packageName: string,
+  profile: DeviceProtectionProfile | null,
+): boolean {
+  if (!profile) {
+    return false;
+  }
+  if (profile.immutablePackages.includes(packageName)) {
+    return true;
+  }
+  if (profile.activeLauncher === packageName) {
+    return true;
+  }
+  if (profile.usableLaunchers.length === 1 && profile.usableLaunchers[0] === packageName) {
+    return true;
+  }
+  if (profile.activeKeyboard === packageName) {
+    return true;
+  }
+  if (profile.enabledKeyboards.length === 1 && profile.enabledKeyboards[0] === packageName) {
+    return true;
+  }
+  return false;
+}
+
+function statusTone(status: OperationStatus): BadgeTone {
+  switch (status) {
+    case "succeeded":
+      return "ok";
+    case "no_op":
+      return "neutral";
+    case "uncertain_timeout":
+    case "blocked_by_protection":
+    case "unsupported":
+      return "warn";
+    case "failed":
+    case "verification_mismatch":
+      return "error";
+  }
+}
+
+function formatFidelity(fidelity: RestorationFidelity): string {
+  switch (fidelity) {
+    case "not_applicable":
+      return "N/A";
+    case "exact":
+      return "Exact restoration";
+    case "effective_match_only":
+      return "Effective state match only";
+    case "unverified":
+      return "Unverified";
+    case "failed":
+      return "Failed";
+  }
+}
+
 export function AppManagerPanel({
   selectedSerial,
   selectedUserId,
+  defaultStateSupported,
   inventory,
   ruleDbSummary,
   recommendations,
+  protections,
+  snapshots,
+  lastOperationResult,
   selectedPackageName,
   packageDetails,
   busy,
@@ -66,8 +141,11 @@ export function AppManagerPanel({
   onScanPackages,
   onSelectPackage,
   onInspectPackageDetails,
+  onRequestOperations,
+  onDismissLastResult,
 }: AppManagerPanelProps) {
   const [filter, setFilter] = useState<ClientPackageFilter>(DEFAULT_FILTER);
+  const [checkedPackages, setCheckedPackages] = useState<string[]>([]);
 
   const filteredPackages = useMemo(() => {
     if (!inventory) {
@@ -75,6 +153,8 @@ export function AppManagerPanel({
     }
     return filterInstalledPackages(inventory.packages, filter, recommendations);
   }, [inventory, filter, recommendations]);
+
+  const checkedSet = useMemo(() => new Set(checkedPackages), [checkedPackages]);
 
   const selectedPackage = useMemo(() => {
     if (!inventory || !selectedPackageName) {
@@ -88,17 +168,46 @@ export function AppManagerPanel({
   const selectedRecommendation = selectedPackage
     ? recommendations[selectedPackage.packageName] ?? null
     : null;
+  const selectedSnapshotStatus = selectedPackage
+    ? snapshots[selectedPackage.packageName] ?? null
+    : null;
+  const selectedProtected = selectedPackage
+    ? isProtectedInProfile(selectedPackage.packageName, protections)
+    : false;
 
   if (!selectedSerial) {
     return (
       <section className={styles.card}>
         <h2 className={styles.heading}>Installed Applications</h2>
         <p className={styles.muted}>
-          Select an authorized device from the Devices & ADB tab before scanning installed packages.
+          Select an authorized device from the Devices & ADB tab before scanning or managing packages.
         </p>
       </section>
     );
   }
+
+  const canMutate = selectedUserId !== null && !busy;
+
+  const toggleChecked = (packageName: string) => {
+    setCheckedPackages((prev) =>
+      prev.includes(packageName)
+        ? prev.filter((p) => p !== packageName)
+        : [...prev, packageName],
+    );
+  };
+
+  const triggerBulkAction = (action: PackageAction) => {
+    if (checkedPackages.length === 0) {
+      return;
+    }
+    onRequestOperations(
+      checkedPackages.map((packageName) => ({ packageName, action })),
+    );
+  };
+
+  const triggerSingleAction = (packageName: string, action: PackageAction) => {
+    onRequestOperations([{ packageName, action }]);
+  };
 
   const hasActiveFilters =
     filter.search.trim().length > 0 ||
@@ -117,7 +226,7 @@ export function AppManagerPanel({
             <p className={styles.muted}>
               Target: <strong>{selectedSerial}</strong> Â· User scope:{" "}
               <strong>
-                {selectedUserId !== null ? `User ${selectedUserId}` : "Device default"}
+                {selectedUserId !== null ? `User ${selectedUserId}` : "Not selected"}
               </strong>
             </p>
           </div>
@@ -125,19 +234,30 @@ export function AppManagerPanel({
             type="button"
             className={`${styles.button} ${styles.buttonPrimary}`}
             disabled={busy}
-            onClick={onScanPackages}
+            onClick={() => {
+              setCheckedPackages([]);
+              onScanPackages();
+            }}
           >
             {inventory ? "Rescan Packages" : "Scan Packages"}
           </button>
         </div>
 
+        {selectedUserId === null && (
+          <AlertBanner
+            tone="warn"
+            title="Explicit Android User ID required for package management"
+            detail="Select a specific Android user profile in the Device Info & Capabilities tab before running Disable, Enable, or Restore operations. ADT never silently assumes User 0."
+          />
+        )}
+
         {ruleDbSummary && (
           <div className={styles.ruleDbBar}>
             Offline recommendation database (<strong>{ruleDbSummary.databaseVersion}</strong>):{" "}
             <strong>{ruleDbSummary.activeRules}</strong> active rules (
-            <strong>{ruleDbSummary.verifiedRules}</strong> verified,{" "}
-            <strong>{ruleDbSummary.communityReportedRules}</strong> community-reported,{" "}
-            <strong>{ruleDbSummary.draftRules}</strong> draft). Unknown packages are never assumed safe.
+            <strong>{ruleDbSummary.verifiedRules}</strong> verified). Active protections:{" "}
+            launcher <strong>{protections?.activeLauncher ?? "unverified"}</strong>, keyboard{" "}
+            <strong>{protections?.activeKeyboard ?? "unverified"}</strong>.
           </div>
         )}
 
@@ -275,9 +395,120 @@ export function AppManagerPanel({
                 </button>
               )}
             </div>
+
+            {checkedPackages.length > 0 && (
+              <div className={styles.bulkBar}>
+                <span>
+                  <strong>{checkedPackages.length}</strong> package(s) selected for bulk preview
+                </span>
+                <div className={styles.actionRow}>
+                  <button
+                    type="button"
+                    className={`${styles.button} ${styles.buttonDanger}`}
+                    disabled={!canMutate}
+                    onClick={() => triggerBulkAction("disable")}
+                  >
+                    Disable Selected
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.button}
+                    disabled={!canMutate}
+                    onClick={() => triggerBulkAction("enable")}
+                  >
+                    Enable Selected
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.button}
+                    disabled={!canMutate}
+                    onClick={() => triggerBulkAction("restore_original_state")}
+                  >
+                    Restore Original
+                  </button>
+                  {defaultStateSupported && (
+                    <button
+                      type="button"
+                      className={styles.button}
+                      disabled={!canMutate}
+                      onClick={() => triggerBulkAction("restore_default_state")}
+                    >
+                      Restore Default
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={styles.button}
+                    onClick={() => setCheckedPackages([])}
+                  >
+                    Clear Selection
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </section>
+
+      {lastOperationResult && (
+        <section className={styles.card}>
+          <div className={styles.toolbar}>
+            <h3 className={styles.heading}>
+              Last Operation Results ({lastOperationResult.succeededCount} succeeded,{" "}
+              {lastOperationResult.blockedCount} blocked,{" "}
+              {lastOperationResult.uncertainCount} uncertain,{" "}
+              {lastOperationResult.failedCount} failed)
+            </h3>
+            <button
+              type="button"
+              className={styles.button}
+              onClick={onDismissLastResult}
+            >
+              Dismiss
+            </button>
+          </div>
+
+          {lastOperationResult.abortedEarlyReason && (
+            <AlertBanner
+              tone="error"
+              title="Bulk execution stopped early"
+              detail={lastOperationResult.abortedEarlyReason}
+            />
+          )}
+
+          <ul className={styles.resultsList}>
+            {lastOperationResult.results.map((r) => (
+              <li key={r.operationId} className={styles.resultItem}>
+                <div className={styles.toolbar}>
+                  <strong>{r.packageName}</strong>
+                  <div className={styles.actionRow}>
+                    <StatusBadge tone={statusTone(r.status)}>{r.status}</StatusBadge>
+                    {r.restorationFidelity !== "not_applicable" && (
+                      <StatusBadge
+                        tone={r.restorationFidelity === "exact" ? "ok" : "warn"}
+                      >
+                        {formatFidelity(r.restorationFidelity)}
+                      </StatusBadge>
+                    )}
+                  </div>
+                </div>
+                {r.verifiedState && (
+                  <p className={styles.muted}>
+                    Verified live state:{" "}
+                    {formatEffectiveState(r.verifiedState.effectiveState)} Â·{" "}
+                    {formatConfiguredState(
+                      r.verifiedState.configuredState,
+                      r.verifiedState.configuredStateCode,
+                    )}
+                  </p>
+                )}
+                {r.limitationNote && <p className={styles.muted}>{r.limitationNote}</p>}
+                {r.errorMessage && <p className={styles.muted}>{r.errorMessage}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {inventory && inventory.warnings.length > 0 && (
         <AlertBanner
@@ -290,7 +521,7 @@ export function AppManagerPanel({
       {!inventory ? (
         <section className={styles.card}>
           <p className={styles.muted}>
-            Click <strong>Scan Packages</strong> to run a fast bulk read-only inventory and evaluate offline recommendations against your device profile.
+            Click <strong>Scan Packages</strong> to enumerate installed packages, evaluate offline recommendations, and enable guarded package controls.
           </p>
         </section>
       ) : (
@@ -299,6 +530,7 @@ export function AppManagerPanel({
             <table className={styles.table}>
               <thead>
                 <tr>
+                  <th aria-label="Select for bulk action" />
                   <th>Application</th>
                   <th>Risk</th>
                   <th>Origin</th>
@@ -309,7 +541,7 @@ export function AppManagerPanel({
               <tbody>
                 {filteredPackages.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className={styles.muted}>
+                    <td colSpan={6} className={styles.muted}>
                       No packages match the current search and filter criteria.
                     </td>
                   </tr>
@@ -318,6 +550,7 @@ export function AppManagerPanel({
                     const isSelected = pkg.packageName === selectedPackageName;
                     const rec = recommendations[pkg.packageName];
                     const risk: RiskClassification = rec?.risk ?? "unknown_unverified";
+                    const isProtected = isProtectedInProfile(pkg.packageName, protections);
                     return (
                       <tr
                         key={pkg.packageName}
@@ -326,8 +559,21 @@ export function AppManagerPanel({
                         }`}
                         onClick={() => onSelectPackage(pkg)}
                       >
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${pkg.packageName}`}
+                            checked={checkedSet.has(pkg.packageName)}
+                            onChange={() => toggleChecked(pkg.packageName)}
+                          />
+                        </td>
                         <td>
-                          <span className={styles.pkgLabel}>{pkg.label}</span>
+                          <span className={styles.pkgLabel}>
+                            {pkg.label}
+                            {isProtected && (
+                              <StatusBadge tone="error">Protected</StatusBadge>
+                            )}
+                          </span>
                           <span className={styles.pkgId}>{pkg.packageName}</span>
                         </td>
                         <td>
@@ -385,20 +631,103 @@ export function AppManagerPanel({
 
             {!selectedPackage ? (
               <p className={styles.muted}>
-                Select any row in the application table to inspect its metadata, offline recommendation evidence, and targeted{" "}
-                <code>dumpsys package</code> details.
+                Select any row in the application table to inspect metadata, recommendation evidence, recovery snapshots, and package controls.
               </p>
             ) : (
               <>
+                <h4 className={styles.subHeading}>Package Controls (User {selectedUserId ?? "â€”"})</h4>
+                <div className={styles.actionRow}>
+                  <button
+                    type="button"
+                    className={`${styles.button} ${styles.buttonDanger}`}
+                    disabled={
+                      !canMutate ||
+                      selectedProtected ||
+                      selectedPackage.effectiveState === "disabled"
+                    }
+                    onClick={() =>
+                      triggerSingleAction(selectedPackage.packageName, "disable")
+                    }
+                  >
+                    Disable
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.button}
+                    disabled={
+                      !canMutate ||
+                      selectedPackage.effectiveState === "enabled"
+                    }
+                    onClick={() =>
+                      triggerSingleAction(selectedPackage.packageName, "enable")
+                    }
+                  >
+                    Enable
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.button}
+                    disabled={!canMutate || !selectedSnapshotStatus?.baseline}
+                    onClick={() =>
+                      triggerSingleAction(
+                        selectedPackage.packageName,
+                        "restore_original_state",
+                      )
+                    }
+                  >
+                    Restore Original
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.button}
+                    disabled={!canMutate || !selectedSnapshotStatus?.latestPreOperation}
+                    onClick={() =>
+                      triggerSingleAction(selectedPackage.packageName, "undo_last")
+                    }
+                  >
+                    Undo Last
+                  </button>
+                  {defaultStateSupported && (
+                    <button
+                      type="button"
+                      className={styles.button}
+                      disabled={!canMutate}
+                      onClick={() =>
+                        triggerSingleAction(
+                          selectedPackage.packageName,
+                          "restore_default_state",
+                        )
+                      }
+                    >
+                      Restore Default
+                    </button>
+                  )}
+                </div>
+
+                {selectedProtected && (
+                  <AlertBanner
+                    tone="error"
+                    title="Disable blocked by ADT protection"
+                    detail="This package is an immutable core component or the active/sole launcher or keyboard on this device."
+                  />
+                )}
+
+                {selectedSnapshotStatus?.baseline && (
+                  <p className={styles.muted}>
+                    Initial toolkit baseline:{" "}
+                    <strong>
+                      {formatConfiguredState(
+                        selectedSnapshotStatus.baseline.configuredState,
+                        selectedSnapshotStatus.baseline.configuredStateCode,
+                      )}
+                    </strong>{" "}
+                    (pre-op history: {selectedSnapshotStatus.preOperationCount})
+                  </p>
+                )}
+
                 <dl className={styles.kvGrid}>
                   <dt>Label</dt>
                   <dd>{selectedPackage.label}</dd>
-                  <dt>Label Source</dt>
-                  <dd>
-                    {selectedPackage.labelSource === "curated_catalog"
-                      ? "Curated offline catalog"
-                      : "Raw package ID fallback"}
-                  </dd>
                   <dt>Package ID</dt>
                   <dd>{selectedPackage.packageName}</dd>
                   <dt>Effective State</dt>
@@ -407,18 +736,6 @@ export function AppManagerPanel({
                   <dd>{formatOrigin(selectedPackage.origin)}</dd>
                   <dt>Partition</dt>
                   <dd>{formatPartition(selectedPackage.partition)}</dd>
-                  <dt>Flags</dt>
-                  <dd>
-                    {[
-                      selectedPackage.isSystem ? "system" : null,
-                      selectedPackage.isThirdParty ? "third-party" : null,
-                      selectedPackage.isUpdatedSystem ? "updated-system" : null,
-                      selectedPackage.isGoogle ? "google" : null,
-                      selectedPackage.isOem ? "oem" : null,
-                    ]
-                      .filter(Boolean)
-                      .join(", ") || "None"}
-                  </dd>
                   <dt>APK Path</dt>
                   <dd>{selectedPackage.apkPath ?? "Unavailable"}</dd>
                 </dl>
@@ -432,13 +749,6 @@ export function AppManagerPanel({
                       </StatusBadge>
                     </div>
                     <p className={styles.muted}>{selectedRecommendation.explanation}</p>
-                    {selectedRecommendation.conflictNote && (
-                      <AlertBanner
-                        tone="warn"
-                        title="Rule conflict resolved conservatively"
-                        detail={selectedRecommendation.conflictNote}
-                      />
-                    )}
                     <dl className={styles.kvGrid}>
                       <dt>Match Scope</dt>
                       <dd>{formatMatchScope(selectedRecommendation.matchScope)}</dd>
@@ -462,40 +772,7 @@ export function AppManagerPanel({
                           <dd>{selectedRecommendation.knownConsequences}</dd>
                         </>
                       )}
-                      {selectedRecommendation.compatibilityNotes && (
-                        <>
-                          <dt>Compatibility</dt>
-                          <dd>{selectedRecommendation.compatibilityNotes}</dd>
-                        </>
-                      )}
-                      {selectedRecommendation.reviewer && (
-                        <>
-                          <dt>Reviewer</dt>
-                          <dd>{selectedRecommendation.reviewer}</dd>
-                        </>
-                      )}
-                      {selectedRecommendation.lastVerifiedDate && (
-                        <>
-                          <dt>Last Verified</dt>
-                          <dd>{selectedRecommendation.lastVerifiedDate}</dd>
-                        </>
-                      )}
                     </dl>
-
-                    {selectedRecommendation.evidence.length > 0 && (
-                      <ul className={styles.evidenceList}>
-                        {selectedRecommendation.evidence.map((ev, idx) => (
-                          <li key={`${idx}-${ev.testDate}`} className={styles.evidenceItem}>
-                            <strong>
-                              {ev.deviceModelOrCodename} Â· {ev.androidVersion} ({ev.testDate})
-                            </strong>
-                            <span>Observed: {ev.observedBehavior}</span>
-                            <span>Limitations: {ev.limitations}</span>
-                            <span>Sources: {ev.sourceReferences.join(", ")}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
                   </>
                 ) : (
                   <p className={styles.muted}>
@@ -520,14 +797,6 @@ export function AppManagerPanel({
                             ? `User ${packageDetails.observedUserId}`
                             : "Unavailable"}
                         </dd>
-                        <dt>Installed for User</dt>
-                        <dd>
-                          {packageDetails.installedForUser === null
-                            ? "Unknown"
-                            : packageDetails.installedForUser
-                              ? "Yes"
-                              : "No"}
-                        </dd>
                         <dt>Configured State</dt>
                         <dd>
                           {formatConfiguredState(
@@ -538,10 +807,6 @@ export function AppManagerPanel({
                       </dl>
                     </>
                   )}
-
-                <p className={styles.readOnlyNote}>
-                  Phase 3 is strictly read-only. Package disable/enable and recovery snapshot controls require explicit approval in Phase 4.
-                </p>
               </>
             )}
           </aside>

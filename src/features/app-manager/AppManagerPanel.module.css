@@ -61,6 +61,25 @@
   align-items: center;
 }
 
+.bulkBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: var(--accent-soft);
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius);
+}
+
+.actionRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .searchInput {
   flex: 1;
   min-width: 220px;
@@ -88,7 +107,7 @@
 }
 
 .button {
-  padding: 7px 14px;
+  padding: 7px 12px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius);
   background: var(--bg-surface);
@@ -111,14 +130,24 @@
   background: var(--accent-hover);
 }
 
+.buttonDanger {
+  border-color: var(--status-err-border);
+  background: var(--status-err-bg);
+  color: var(--status-err-text);
+}
+
+.buttonDanger:hover:not(:disabled) {
+  background: #fee2e2;
+}
+
 .button:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 .splitLayout {
   display: grid;
-  grid-template-columns: minmax(0, 1.85fr) minmax(310px, 1fr);
+  grid-template-columns: minmax(0, 1.85fr) minmax(320px, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -174,10 +203,14 @@
 
 .pkgLabel {
   font-weight: 600;
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .pkgId {
+  display: block;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-secondary);
@@ -222,17 +255,27 @@
   gap: 3px;
 }
 
+.resultsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.resultItem {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .muted {
   margin: 0;
   color: var(--text-secondary);
   font-size: 13px;
-}
-
-.readOnlyNote {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: var(--radius);
-  background: var(--bg-subtle);
-  color: var(--text-secondary);
-  font-size: 12px;
 }

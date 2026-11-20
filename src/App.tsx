@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { OperationPreviewDialog } from "./components/dialogs/OperationPreviewDialog";
 import { AlertBanner } from "./components/feedback/AlertBanner";
 import { StatusBadge } from "./components/shared/StatusBadge";
 import { AppManagerPanel } from "./features/app-manager/AppManagerPanel";
@@ -6,6 +7,12 @@ import { DeviceInfoPanel } from "./features/device-info/DeviceInfoPanel";
 import { AdbDevicePanel } from "./features/devices/AdbDevicePanel";
 import { detectAdb, listDevices, parseAdtError } from "./lib/tauri/adb";
 import { getDeviceCapabilities, getDeviceSpecs } from "./lib/tauri/device";
+import {
+  executePackageOperations,
+  getDeviceProtections,
+  getPackageSnapshots,
+  previewPackageOperations,
+} from "./lib/tauri/operations";
 import {
   inspectPackageDetails,
   scanInstalledPackages,
@@ -17,6 +24,13 @@ import {
 import styles from "./styles/app.module.css";
 import type { AdbDevice, AdbStatus, AdtErrorPayload } from "./types/adb";
 import type { DeviceCapabilities, DeviceSpecs } from "./types/device";
+import type {
+  BulkOperationPreview,
+  BulkOperationResult,
+  DeviceProtectionProfile,
+  PackageActionRequest,
+  PackageSnapshotStatus,
+} from "./types/operations";
 import type {
   InstalledPackage,
   PackageDetails,
@@ -38,6 +52,7 @@ export function App() {
 
   const [deviceSpecs, setDeviceSpecs] = useState<DeviceSpecs | null>(null);
   const [capabilities, setCapabilities] = useState<DeviceCapabilities | null>(null);
+  const [protections, setProtections] = useState<DeviceProtectionProfile | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
 
   const [inventory, setInventory] = useState<PackageInventory | null>(null);
@@ -45,34 +60,56 @@ export function App() {
   const [recommendations, setRecommendations] = useState<
     Record<string, PackageRecommendation>
   >({});
+  const [snapshots, setSnapshots] = useState<Record<string, PackageSnapshotStatus>>({});
+  const [pendingItems, setPendingItems] = useState<PackageActionRequest[]>([]);
+  const [operationPreview, setOperationPreview] = useState<BulkOperationPreview | null>(
+    null,
+  );
+  const [lastOperationResult, setLastOperationResult] =
+    useState<BulkOperationResult | null>(null);
+
   const [selectedPackageName, setSelectedPackageName] = useState<string | null>(null);
   const [packageDetails, setPackageDetails] = useState<PackageDetails | null>(null);
 
   const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const [inspectingPackage, setInspectingPackage] = useState(false);
+  const [executingOperations, setExecutingOperations] = useState(false);
   const [error, setError] = useState<AdtErrorPayload | null>(null);
 
   const clearSelectedDeviceData = useCallback(() => {
     setDeviceSpecs(null);
     setCapabilities(null);
+    setProtections(null);
     setSelectedUserId(null);
     setInventory(null);
     setRecommendations({});
+    setSnapshots({});
+    setPendingItems([]);
+    setOperationPreview(null);
+    setLastOperationResult(null);
     setSelectedPackageName(null);
     setPackageDetails(null);
   }, []);
 
   const loadDeviceContext = useCallback(async (serial: string) => {
     setError(null);
-    setLoadingMessage(`Reading specifications and capabilities for ${serial}...`);
+    setLoadingMessage(
+      `Reading specifications, capabilities, and safety protections for ${serial}...`,
+    );
     try {
-      const [specs, caps] = await Promise.all([
+      const [specs, caps, prot] = await Promise.all([
         getDeviceSpecs(serial),
         getDeviceCapabilities(serial),
+        getDeviceProtections(serial),
       ]);
       setDeviceSpecs(specs);
       setCapabilities(caps);
+      setProtections(prot);
       setSelectedUserId(caps.activeUserId);
+      if (caps.activeUserId !== null) {
+        const snapMap = await getPackageSnapshots(serial, caps.activeUserId);
+        setSnapshots(snapMap);
+      }
     } catch (err) {
       setError(parseAdtError(err));
     } finally {
@@ -144,17 +181,10 @@ export function App() {
     setActiveTab("device-info");
   };
 
-  const handleScanPackages = async () => {
-    if (!selectedSerial) {
-      return;
-    }
-    setError(null);
-    setSelectedPackageName(null);
-    setPackageDetails(null);
-    setRecommendations({});
-    setLoadingMessage(`Scanning installed packages on ${selectedSerial}...`);
-    try {
-      const result = await scanInstalledPackages(selectedSerial, selectedUserId);
+  const runScanAndEvaluate = useCallback(
+    async (serial: string, userId: number | null) => {
+      setLoadingMessage(`Scanning installed packages on ${serial}...`);
+      const result = await scanInstalledPackages(serial, userId);
       setInventory(result);
 
       setLoadingMessage("Evaluating offline package recommendations...");
@@ -169,6 +199,25 @@ export function App() {
       );
       setRuleDbSummary(batch.database);
       setRecommendations(batch.recommendations);
+
+      if (userId !== null) {
+        const snapMap = await getPackageSnapshots(serial, userId);
+        setSnapshots(snapMap);
+      }
+    },
+    [deviceSpecs],
+  );
+
+  const handleScanPackages = async () => {
+    if (!selectedSerial) {
+      return;
+    }
+    setError(null);
+    setSelectedPackageName(null);
+    setPackageDetails(null);
+    setRecommendations({});
+    try {
+      await runScanAndEvaluate(selectedSerial, selectedUserId);
     } catch (err) {
       setError(parseAdtError(err));
     } finally {
@@ -203,14 +252,72 @@ export function App() {
     }
   };
 
-  const busy = loadingMessage !== null;
+  const capabilityFlags = {
+    pmDefaultStateSupported: capabilities?.pmDefaultState === "supported",
+    pmDisableUntilUsedSupported: capabilities?.pmDisableUntilUsed === "supported",
+  };
+
+  const handleRequestOperations = async (items: PackageActionRequest[]) => {
+    if (!selectedSerial || selectedUserId === null || items.length === 0) {
+      return;
+    }
+    setError(null);
+    setLoadingMessage("Preparing safety preview for planned package operations...");
+    try {
+      const preview = await previewPackageOperations({
+        serial: selectedSerial,
+        userId: selectedUserId,
+        items,
+        capabilities: capabilityFlags,
+      });
+      setPendingItems(items);
+      setOperationPreview(preview);
+    } catch (err) {
+      setError(parseAdtError(err));
+    } finally {
+      setLoadingMessage(null);
+    }
+  };
+
+  const handleConfirmOperations = async () => {
+    if (!selectedSerial || selectedUserId === null || pendingItems.length === 0) {
+      return;
+    }
+    setError(null);
+    setExecutingOperations(true);
+    try {
+      const result = await executePackageOperations({
+        serial: selectedSerial,
+        userId: selectedUserId,
+        items: pendingItems,
+        confirmed: true,
+        androidVersion: deviceSpecs?.identification.androidVersion ?? null,
+        capabilities: capabilityFlags,
+      });
+      setLastOperationResult(result);
+      setOperationPreview(null);
+      setPendingItems([]);
+      setPackageDetails(null);
+      await runScanAndEvaluate(selectedSerial, selectedUserId);
+    } catch (err) {
+      setError(parseAdtError(err));
+      setOperationPreview(null);
+    } finally {
+      setExecutingOperations(false);
+      setLoadingMessage(null);
+    }
+  };
+
+  const busy = loadingMessage !== null || executingOperations;
 
   return (
     <main className={styles.shell}>
       <header className={styles.header}>
         <div className={styles.titleGroup}>
           <h1 className={styles.title}>Android Debloating Toolkit</h1>
-          <StatusBadge tone="neutral">Phase 3 â€” Offline Recommendation Engine</StatusBadge>
+          <StatusBadge tone="neutral">
+            Phase 4 â€” Guarded Package Management & Recovery
+          </StatusBadge>
         </div>
         <div className={styles.statusBar}>
           <StatusBadge tone={adbStatus?.available ? "ok" : "warn"}>
@@ -298,6 +405,11 @@ export function App() {
             setRecommendations({});
             setSelectedPackageName(null);
             setPackageDetails(null);
+            if (selectedSerial && uid !== null) {
+              void getPackageSnapshots(selectedSerial, uid).then(setSnapshots);
+            } else {
+              setSnapshots({});
+            }
           }}
           busy={busy}
           onRefresh={() => {
@@ -312,9 +424,13 @@ export function App() {
         <AppManagerPanel
           selectedSerial={selectedSerial}
           selectedUserId={selectedUserId}
+          defaultStateSupported={capabilityFlags.pmDefaultStateSupported}
           inventory={inventory}
           ruleDbSummary={ruleDbSummary}
           recommendations={recommendations}
+          protections={protections}
+          snapshots={snapshots}
+          lastOperationResult={lastOperationResult}
           selectedPackageName={selectedPackageName}
           packageDetails={packageDetails}
           busy={busy}
@@ -324,6 +440,20 @@ export function App() {
           onInspectPackageDetails={(pkgName) =>
             void handleInspectPackageDetails(pkgName)
           }
+          onRequestOperations={(items) => void handleRequestOperations(items)}
+          onDismissLastResult={() => setLastOperationResult(null)}
+        />
+      )}
+
+      {operationPreview && (
+        <OperationPreviewDialog
+          preview={operationPreview}
+          executing={executingOperations}
+          onCancel={() => {
+            setOperationPreview(null);
+            setPendingItems([]);
+          }}
+          onConfirm={() => void handleConfirmOperations()}
         />
       )}
     </main>

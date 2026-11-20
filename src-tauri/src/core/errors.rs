@@ -18,6 +18,15 @@ pub enum AdtError {
     #[error("Recommendation rule database error: {message}")]
     RuleValidation { message: String },
 
+    #[error("Another package operation is already running on device '{serial}'. Wait for it to finish before starting a new operation.")]
+    OperationInProgress { serial: String },
+
+    #[error("Explicit user confirmation is required before executing package modifications.")]
+    ConfirmationRequired,
+
+    #[error("An explicit Android user ID must be selected before executing package modifications.")]
+    UserIdRequired,
+
     #[error("Device '{serial}' was not found in the list of connected devices.")]
     DeviceNotFound { serial: String },
 
@@ -69,6 +78,9 @@ impl AdtError {
             Self::InvalidDeviceSerial { .. } => "invalid_device_serial",
             Self::InvalidPackageName { .. } => "invalid_package_name",
             Self::RuleValidation { .. } => "rule_validation",
+            Self::OperationInProgress { .. } => "operation_in_progress",
+            Self::ConfirmationRequired => "confirmation_required",
+            Self::UserIdRequired => "user_id_required",
             Self::DeviceNotFound { .. } => "device_not_found",
             Self::DeviceUnauthorized { .. } => "device_unauthorized",
             Self::DeviceOffline { .. } => "device_offline",
@@ -96,6 +108,15 @@ impl AdtError {
             Self::RuleValidation { .. } => Some(
                 "Verify the package-rule JSON conforms to data/package-rules/schema.json and includes evidence for verified rules.",
             ),
+            Self::OperationInProgress { .. } => Some(
+                "Conflicting operations cannot run simultaneously on the same device. Wait for the active operation to complete.",
+            ),
+            Self::ConfirmationRequired => Some(
+                "Preview the planned package actions and confirm explicitly before execution.",
+            ),
+            Self::UserIdRequired => Some(
+                "Select an Android user profile in the Device Info & Capabilities tab before modifying packages.",
+            ),
             Self::DeviceNotFound { .. } => Some(
                 "Refresh the device list and ensure USB debugging is enabled and the cable is connected.",
             ),
@@ -109,10 +130,10 @@ impl AdtError {
                 "Check USB driver installation or operating system USB permissions for this device.",
             ),
             Self::DeviceDisconnected { .. } => Some(
-                "Reconnect the device, refresh the device list, and retry the read-only check.",
+                "Reconnect the device, refresh the device list, and verify actual package state before retrying.",
             ),
             Self::Timeout { .. } => Some(
-                "The ADB command did not respond in time. Verify the device screen is awake and the USB connection is stable.",
+                "Terminating the local ADB process does not prove the device stopped executing. Verify actual device state before retrying.",
             ),
             _ => None,
         }

@@ -43,8 +43,8 @@ impl PackageListFilter {
     }
 }
 
-/// Closed, strictly read-only allow-list of ADB commands permitted in Phases 1 and 2.
-/// No mutating operations or arbitrary shell strings can be constructed.
+/// Closed, strictly read-only allow-list of ADB commands.
+/// No mutating operations or arbitrary shell strings can be constructed here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdbReadOnlyCommand {
     Version,
@@ -102,6 +102,18 @@ pub enum AdbReadOnlyCommand {
         serial: String,
         package_name: String,
     },
+    PmResolveHome {
+        serial: String,
+    },
+    QueryLaunchers {
+        serial: String,
+    },
+    GetDefaultInputMethod {
+        serial: String,
+    },
+    ListEnabledInputMethods {
+        serial: String,
+    },
 }
 
 impl AdbReadOnlyCommand {
@@ -123,7 +135,11 @@ impl AdbReadOnlyCommand {
             | Self::AmGetCurrentUser { serial }
             | Self::PmListUsers { serial }
             | Self::PmListPackages { serial, .. }
-            | Self::DumpsysPackage { serial, .. } => Some(serial.as_str()),
+            | Self::DumpsysPackage { serial, .. }
+            | Self::PmResolveHome { serial }
+            | Self::QueryLaunchers { serial }
+            | Self::GetDefaultInputMethod { serial }
+            | Self::ListEnabledInputMethods { serial } => Some(serial.as_str()),
         }
     }
 
@@ -155,6 +171,12 @@ impl AdbReadOnlyCommand {
             Self::PmListUsers { .. } => "adb shell pm list users",
             Self::PmListPackages { .. } => "adb shell pm list packages",
             Self::DumpsysPackage { .. } => "adb shell dumpsys package",
+            Self::PmResolveHome { .. } => "adb shell pm resolve-activity (HOME)",
+            Self::QueryLaunchers { .. } => "adb shell cmd package query-activities (HOME)",
+            Self::GetDefaultInputMethod { .. } => {
+                "adb shell settings get secure default_input_method"
+            }
+            Self::ListEnabledInputMethods { .. } => "adb shell ime list -s",
         }
     }
 
@@ -215,7 +237,124 @@ impl AdbReadOnlyCommand {
                 validate_package_name(package_name)?;
                 Ok(shell_args(serial, &["dumpsys", "package", package_name]))
             }
+            Self::PmResolveHome { serial } => Ok(shell_args(
+                serial,
+                &[
+                    "pm",
+                    "resolve-activity",
+                    "--brief",
+                    "-a",
+                    "android.intent.action.MAIN",
+                    "-c",
+                    "android.intent.category.HOME",
+                ],
+            )),
+            Self::QueryLaunchers { serial } => Ok(shell_args(
+                serial,
+                &[
+                    "cmd",
+                    "package",
+                    "query-activities",
+                    "--brief",
+                    "-a",
+                    "android.intent.action.MAIN",
+                    "-c",
+                    "android.intent.category.HOME",
+                ],
+            )),
+            Self::GetDefaultInputMethod { serial } => Ok(shell_args(
+                serial,
+                &["settings", "get", "secure", "default_input_method"],
+            )),
+            Self::ListEnabledInputMethods { serial } => {
+                Ok(shell_args(serial, &["ime", "list", "-s"]))
+            }
         }
+    }
+}
+
+/// Strictly separated, closed allow-list of reversible Phase 4 package-management commands.
+/// Never includes `pm uninstall`, `pm clear`, `pm install`, `am force-stop`, or reboot commands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdbMutatingCommand {
+    PmDisableUser {
+        serial: String,
+        user_id: u32,
+        package_name: String,
+    },
+    PmEnable {
+        serial: String,
+        user_id: u32,
+        package_name: String,
+    },
+    PmDefaultState {
+        serial: String,
+        user_id: u32,
+        package_name: String,
+    },
+    PmDisableUntilUsed {
+        serial: String,
+        user_id: u32,
+        package_name: String,
+    },
+}
+
+impl AdbMutatingCommand {
+    pub fn target_serial(&self) -> &str {
+        match self {
+            Self::PmDisableUser { serial, .. }
+            | Self::PmEnable { serial, .. }
+            | Self::PmDefaultState { serial, .. }
+            | Self::PmDisableUntilUsed { serial, .. } => serial.as_str(),
+        }
+    }
+
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::PmDisableUser { .. } => "adb shell pm disable-user",
+            Self::PmEnable { .. } => "adb shell pm enable",
+            Self::PmDefaultState { .. } => "adb shell pm default-state",
+            Self::PmDisableUntilUsed { .. } => "adb shell pm disable-until-used",
+        }
+    }
+
+    pub fn build_args(&self) -> Result<Vec<String>, AdtError> {
+        let (serial, subcmd, user_id, package_name) = match self {
+            Self::PmDisableUser {
+                serial,
+                user_id,
+                package_name,
+            } => (serial, "disable-user", *user_id, package_name),
+            Self::PmEnable {
+                serial,
+                user_id,
+                package_name,
+            } => (serial, "enable", *user_id, package_name),
+            Self::PmDefaultState {
+                serial,
+                user_id,
+                package_name,
+            } => (serial, "default-state", *user_id, package_name),
+            Self::PmDisableUntilUsed {
+                serial,
+                user_id,
+                package_name,
+            } => (serial, "disable-until-used", *user_id, package_name),
+        };
+
+        validate_device_serial(serial)?;
+        validate_package_name(package_name)?;
+
+        Ok(vec![
+            "-s".to_string(),
+            serial.clone(),
+            "shell".to_string(),
+            "pm".to_string(),
+            subcmd.to_string(),
+            "--user".to_string(),
+            user_id.to_string(),
+            package_name.clone(),
+        ])
     }
 }
 
@@ -293,6 +432,47 @@ mod tests {
     }
 
     #[test]
+    fn builds_mutating_pm_commands_with_explicit_serial_and_user_id() {
+        let disable = AdbMutatingCommand::PmDisableUser {
+            serial: "DEV01".to_string(),
+            user_id: 0,
+            package_name: "com.example.app".to_string(),
+        };
+        assert_eq!(
+            disable.build_args().expect("disable args"),
+            vec![
+                "-s",
+                "DEV01",
+                "shell",
+                "pm",
+                "disable-user",
+                "--user",
+                "0",
+                "com.example.app"
+            ]
+        );
+
+        let default_state = AdbMutatingCommand::PmDefaultState {
+            serial: "DEV01".to_string(),
+            user_id: 10,
+            package_name: "com.example.app".to_string(),
+        };
+        assert_eq!(
+            default_state.build_args().expect("default-state args"),
+            vec![
+                "-s",
+                "DEV01",
+                "shell",
+                "pm",
+                "default-state",
+                "--user",
+                "10",
+                "com.example.app"
+            ]
+        );
+    }
+
+    #[test]
     fn rejects_invalid_serial_and_invalid_package_name() {
         let bad_serial = AdbReadOnlyCommand::GetProp {
             serial: "bad serial".to_string(),
@@ -303,8 +483,9 @@ mod tests {
             Err(AdtError::InvalidDeviceSerial { .. })
         ));
 
-        let bad_pkg = AdbReadOnlyCommand::DumpsysPackage {
+        let bad_pkg = AdbMutatingCommand::PmDisableUser {
             serial: "DEV01".to_string(),
+            user_id: 0,
             package_name: "com.bad;reboot".to_string(),
         };
         assert!(matches!(
