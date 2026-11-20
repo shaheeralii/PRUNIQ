@@ -3,10 +3,15 @@ import { AlertBanner } from "../../components/feedback/AlertBanner";
 import { StatusBadge } from "../../components/shared/StatusBadge";
 import {
   filterInstalledPackages,
+  formatConfidence,
   formatConfiguredState,
   formatEffectiveState,
+  formatMatchScope,
   formatOrigin,
   formatPartition,
+  formatRisk,
+  formatVerificationStatus,
+  riskTone,
   type ClientPackageFilter,
 } from "../../lib/format";
 import type {
@@ -17,12 +22,19 @@ import type {
   PackageInventory,
   PackageOrigin,
 } from "../../types/packages";
+import type {
+  PackageRecommendation,
+  RiskClassification,
+  RuleDatabaseSummary,
+} from "../../types/rules";
 import styles from "./AppManagerPanel.module.css";
 
 interface AppManagerPanelProps {
   selectedSerial: string | null;
   selectedUserId: number | null;
   inventory: PackageInventory | null;
+  ruleDbSummary: RuleDatabaseSummary | null;
+  recommendations: Record<string, PackageRecommendation>;
   selectedPackageName: string | null;
   packageDetails: PackageDetails | null;
   busy: boolean;
@@ -37,6 +49,7 @@ const DEFAULT_FILTER: ClientPackageFilter = {
   origin: "all",
   state: "all",
   partition: "all",
+  risk: "all",
   updatedSystemOnly: false,
 };
 
@@ -44,6 +57,8 @@ export function AppManagerPanel({
   selectedSerial,
   selectedUserId,
   inventory,
+  ruleDbSummary,
+  recommendations,
   selectedPackageName,
   packageDetails,
   busy,
@@ -58,8 +73,8 @@ export function AppManagerPanel({
     if (!inventory) {
       return [];
     }
-    return filterInstalledPackages(inventory.packages, filter);
-  }, [inventory, filter]);
+    return filterInstalledPackages(inventory.packages, filter, recommendations);
+  }, [inventory, filter, recommendations]);
 
   const selectedPackage = useMemo(() => {
     if (!inventory || !selectedPackageName) {
@@ -69,6 +84,10 @@ export function AppManagerPanel({
       inventory.packages.find((p) => p.packageName === selectedPackageName) ?? null
     );
   }, [inventory, selectedPackageName]);
+
+  const selectedRecommendation = selectedPackage
+    ? recommendations[selectedPackage.packageName] ?? null
+    : null;
 
   if (!selectedSerial) {
     return (
@@ -86,6 +105,7 @@ export function AppManagerPanel({
     filter.origin !== "all" ||
     filter.state !== "all" ||
     filter.partition !== "all" ||
+    filter.risk !== "all" ||
     filter.updatedSystemOnly;
 
   return (
@@ -110,6 +130,16 @@ export function AppManagerPanel({
             {inventory ? "Rescan Packages" : "Scan Packages"}
           </button>
         </div>
+
+        {ruleDbSummary && (
+          <div className={styles.ruleDbBar}>
+            Offline recommendation database (<strong>{ruleDbSummary.databaseVersion}</strong>):{" "}
+            <strong>{ruleDbSummary.activeRules}</strong> active rules (
+            <strong>{ruleDbSummary.verifiedRules}</strong> verified,{" "}
+            <strong>{ruleDbSummary.communityReportedRules}</strong> community-reported,{" "}
+            <strong>{ruleDbSummary.draftRules}</strong> draft). Unknown packages are never assumed safe.
+          </div>
+        )}
 
         {inventory && (
           <>
@@ -143,6 +173,24 @@ export function AppManagerPanel({
                 }
                 aria-label="Search installed packages"
               />
+
+              <select
+                className={styles.select}
+                aria-label="Filter by recommendation risk"
+                value={filter.risk}
+                onChange={(e) =>
+                  setFilter((prev) => ({
+                    ...prev,
+                    risk: e.target.value as RiskClassification | "all",
+                  }))
+                }
+              >
+                <option value="all">All risks</option>
+                <option value="recommended_to_disable">Recommended to Disable</option>
+                <option value="caution">Caution</option>
+                <option value="do_not_disable">Do Not Disable</option>
+                <option value="unknown_unverified">Unknown / Unverified</option>
+              </select>
 
               <select
                 className={styles.select}
@@ -242,8 +290,7 @@ export function AppManagerPanel({
       {!inventory ? (
         <section className={styles.card}>
           <p className={styles.muted}>
-            Click <strong>Scan Packages</strong> to run a fast bulk read-only inventory (uses at most 5 bulk{" "}
-            <code>pm list packages</code> calls without per-app <code>dumpsys</code> loops).
+            Click <strong>Scan Packages</strong> to run a fast bulk read-only inventory and evaluate offline recommendations against your device profile.
           </p>
         </section>
       ) : (
@@ -253,6 +300,7 @@ export function AppManagerPanel({
               <thead>
                 <tr>
                   <th>Application</th>
+                  <th>Risk</th>
                   <th>Origin</th>
                   <th>Partition</th>
                   <th>State</th>
@@ -261,13 +309,15 @@ export function AppManagerPanel({
               <tbody>
                 {filteredPackages.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className={styles.muted}>
+                    <td colSpan={5} className={styles.muted}>
                       No packages match the current search and filter criteria.
                     </td>
                   </tr>
                 ) : (
                   filteredPackages.map((pkg) => {
                     const isSelected = pkg.packageName === selectedPackageName;
+                    const rec = recommendations[pkg.packageName];
+                    const risk: RiskClassification = rec?.risk ?? "unknown_unverified";
                     return (
                       <tr
                         key={pkg.packageName}
@@ -279,6 +329,11 @@ export function AppManagerPanel({
                         <td>
                           <span className={styles.pkgLabel}>{pkg.label}</span>
                           <span className={styles.pkgId}>{pkg.packageName}</span>
+                        </td>
+                        <td>
+                          <StatusBadge tone={riskTone(risk)}>
+                            {formatRisk(risk)}
+                          </StatusBadge>
                         </td>
                         <td>
                           <StatusBadge
@@ -330,7 +385,7 @@ export function AppManagerPanel({
 
             {!selectedPackage ? (
               <p className={styles.muted}>
-                Select any row in the application table to inspect its metadata, installation partition, and targeted{" "}
+                Select any row in the application table to inspect its metadata, offline recommendation evidence, and targeted{" "}
                 <code>dumpsys package</code> details.
               </p>
             ) : (
@@ -368,10 +423,90 @@ export function AppManagerPanel({
                   <dd>{selectedPackage.apkPath ?? "Unavailable"}</dd>
                 </dl>
 
+                <h4 className={styles.subHeading}>Recommendation & Evidence</h4>
+                {selectedRecommendation ? (
+                  <>
+                    <div>
+                      <StatusBadge tone={riskTone(selectedRecommendation.risk)}>
+                        {formatRisk(selectedRecommendation.risk)}
+                      </StatusBadge>
+                    </div>
+                    <p className={styles.muted}>{selectedRecommendation.explanation}</p>
+                    {selectedRecommendation.conflictNote && (
+                      <AlertBanner
+                        tone="warn"
+                        title="Rule conflict resolved conservatively"
+                        detail={selectedRecommendation.conflictNote}
+                      />
+                    )}
+                    <dl className={styles.kvGrid}>
+                      <dt>Match Scope</dt>
+                      <dd>{formatMatchScope(selectedRecommendation.matchScope)}</dd>
+                      <dt>Verification</dt>
+                      <dd>
+                        {formatVerificationStatus(
+                          selectedRecommendation.verificationStatus,
+                        )}
+                      </dd>
+                      <dt>Confidence</dt>
+                      <dd>{formatConfidence(selectedRecommendation.confidence)}</dd>
+                      {selectedRecommendation.purpose && (
+                        <>
+                          <dt>Purpose</dt>
+                          <dd>{selectedRecommendation.purpose}</dd>
+                        </>
+                      )}
+                      {selectedRecommendation.knownConsequences && (
+                        <>
+                          <dt>Consequences</dt>
+                          <dd>{selectedRecommendation.knownConsequences}</dd>
+                        </>
+                      )}
+                      {selectedRecommendation.compatibilityNotes && (
+                        <>
+                          <dt>Compatibility</dt>
+                          <dd>{selectedRecommendation.compatibilityNotes}</dd>
+                        </>
+                      )}
+                      {selectedRecommendation.reviewer && (
+                        <>
+                          <dt>Reviewer</dt>
+                          <dd>{selectedRecommendation.reviewer}</dd>
+                        </>
+                      )}
+                      {selectedRecommendation.lastVerifiedDate && (
+                        <>
+                          <dt>Last Verified</dt>
+                          <dd>{selectedRecommendation.lastVerifiedDate}</dd>
+                        </>
+                      )}
+                    </dl>
+
+                    {selectedRecommendation.evidence.length > 0 && (
+                      <ul className={styles.evidenceList}>
+                        {selectedRecommendation.evidence.map((ev, idx) => (
+                          <li key={`${idx}-${ev.testDate}`} className={styles.evidenceItem}>
+                            <strong>
+                              {ev.deviceModelOrCodename} Â· {ev.androidVersion} ({ev.testDate})
+                            </strong>
+                            <span>Observed: {ev.observedBehavior}</span>
+                            <span>Limitations: {ev.limitations}</span>
+                            <span>Sources: {ev.sourceReferences.join(", ")}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                ) : (
+                  <p className={styles.muted}>
+                    No recommendation evaluation available for this package yet.
+                  </p>
+                )}
+
                 {packageDetails &&
                   packageDetails.packageName === selectedPackage.packageName && (
                     <>
-                      <h4 className={styles.heading}>Targeted dumpsys Inspection</h4>
+                      <h4 className={styles.subHeading}>Targeted dumpsys Inspection</h4>
                       <dl className={styles.kvGrid}>
                         <dt>Version Name</dt>
                         <dd>{packageDetails.versionName ?? "Unavailable"}</dd>
@@ -405,7 +540,7 @@ export function AppManagerPanel({
                   )}
 
                 <p className={styles.readOnlyNote}>
-                  Phase 2.5 is strictly read-only. Package disable/enable and recovery snapshot controls are scheduled for Phase 4.
+                  Phase 3 is strictly read-only. Package disable/enable and recovery snapshot controls require explicit approval in Phase 4.
                 </p>
               </>
             )}

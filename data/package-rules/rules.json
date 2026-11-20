@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "databaseVersion": "0.1.0-initial-unpopulated",
+  "description": "Initial offline recommendation rule database. Contains zero verified recommendations until evidence-backed entries are independently tested and reviewed.",
+  "rules": []
+}

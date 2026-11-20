@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adt.local/schemas/package-rules-v1.json",
+  "title": "Android Debloating Toolkit Package Recommendation Rules",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "databaseVersion", "rules"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "databaseVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/packageRule"
+      }
+    }
+  },
+  "$defs": {
+    "ruleEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceReferences",
+        "deviceModelOrCodename",
+        "androidVersion",
+        "testDate",
+        "observedBehavior",
+        "limitations"
+      ],
+      "properties": {
+        "sourceReferences": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "deviceModelOrCodename": { "type": "string", "minLength": 1 },
+        "androidVersion": { "type": "string", "minLength": 1 },
+        "testDate": { "type": "string", "minLength": 1 },
+        "observedBehavior": { "type": "string", "minLength": 1 },
+        "limitations": { "type": "string", "minLength": 1 }
+      }
+    },
+    "packageRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "packageName",
+        "appLabel",
+        "purpose",
+        "risk",
+        "knownConsequences",
+        "manufacturers",
+        "deviceModels",
+        "deviceCodenames",
+        "compatibilityNotes",
+        "confidence",
+        "evidence",
+        "verificationStatus"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "packageName": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "appLabel": { "type": "string", "minLength": 1 },
+        "purpose": { "type": "string", "minLength": 1 },
+        "risk": {
+          "type": "string",
+          "enum": [
+            "recommended_to_disable",
+            "caution",
+            "do_not_disable",
+            "unknown_unverified"
+          ]
+        },
+        "knownConsequences": { "type": "string", "minLength": 1 },
+        "manufacturers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "deviceModels": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "deviceCodenames": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "minApiLevel": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "maxApiLevel": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "compatibilityNotes": { "type": "string" },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low", "unverified"]
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ruleEvidence" }
+        },
+        "verificationStatus": {
+          "type": "string",
+          "enum": ["draft", "community_reported", "verified", "deprecated"]
+        },
+        "lastVerifiedDate": {
+          "type": ["string", "null"]
+        },
+        "reviewer": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import type { BadgeTone } from "../components/shared/StatusBadge";
 import type { CommandSupport, SupportTier } from "../types/device";
 import type {
   ConfiguredPackageState,
@@ -6,6 +7,13 @@ import type {
   InstalledPackage,
   PackageOrigin,
 } from "../types/packages";
+import type {
+  ConfidenceLevel,
+  MatchScope,
+  PackageRecommendation,
+  RiskClassification,
+  VerificationStatus,
+} from "../types/rules";
 
 export function formatKb(kb: number | null | undefined): string {
   if (kb === null || kb === undefined || Number.isNaN(kb)) {
@@ -116,17 +124,90 @@ export function formatCommandSupport(support: CommandSupport): string {
   }
 }
 
+export function formatRisk(risk: RiskClassification): string {
+  switch (risk) {
+    case "recommended_to_disable":
+      return "Recommended to Disable";
+    case "caution":
+      return "Caution";
+    case "do_not_disable":
+      return "Do Not Disable";
+    case "unknown_unverified":
+      return "Unknown / Unverified";
+  }
+}
+
+export function riskTone(risk: RiskClassification): BadgeTone {
+  switch (risk) {
+    case "recommended_to_disable":
+      return "ok";
+    case "caution":
+      return "warn";
+    case "do_not_disable":
+      return "error";
+    case "unknown_unverified":
+      return "neutral";
+  }
+}
+
+export function formatMatchScope(scope: MatchScope): string {
+  switch (scope) {
+    case "exact_device":
+      return "Exact device rule";
+    case "manufacturer":
+      return "Manufacturer rule";
+    case "android_version":
+      return "Android API-range rule";
+    case "general":
+      return "General Android rule";
+    case "unknown":
+      return "No matching rule";
+  }
+}
+
+export function formatVerificationStatus(
+  status: VerificationStatus | null,
+): string {
+  switch (status) {
+    case "verified":
+      return "Verified";
+    case "community_reported":
+      return "Community reported";
+    case "draft":
+      return "Draft";
+    case "deprecated":
+      return "Deprecated";
+    case null:
+      return "Unverified";
+  }
+}
+
+export function formatConfidence(confidence: ConfidenceLevel): string {
+  switch (confidence) {
+    case "high":
+      return "High";
+    case "medium":
+      return "Medium";
+    case "low":
+      return "Low";
+    case "unverified":
+      return "Unverified";
+  }
+}
+
 export interface ClientPackageFilter {
   search: string;
   origin: PackageOrigin | "all";
   state: EffectivePackageState | "all";
   partition: InstallPartition | "all";
+  risk: RiskClassification | "all";
   updatedSystemOnly: boolean;
 }
 
 export function filterInstalledPackages(
   packages: InstalledPackage[],
   filter: ClientPackageFilter,
+  recommendations: Record<string, PackageRecommendation>,
 ): InstalledPackage[] {
   const needle = filter.search.trim().toLowerCase();
 
@@ -146,6 +227,13 @@ export function filterInstalledPackages(
     }
     if (filter.partition !== "all" && pkg.partition !== filter.partition) {
       return false;
+    }
+    if (filter.risk !== "all") {
+      const pkgRisk: RiskClassification =
+        recommendations[pkg.packageName]?.risk ?? "unknown_unverified";
+      if (pkgRisk !== filter.risk) {
+        return false;
+      }
     }
     if (filter.updatedSystemOnly && !pkg.isUpdatedSystem) {
       return false;

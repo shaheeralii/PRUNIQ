@@ -15,6 +15,9 @@ pub enum AdtError {
     #[error("Invalid Android package identifier: {reason}")]
     InvalidPackageName { reason: String },
 
+    #[error("Recommendation rule database error: {message}")]
+    RuleValidation { message: String },
+
     #[error("Device '{serial}' was not found in the list of connected devices.")]
     DeviceNotFound { serial: String },
 
@@ -65,6 +68,7 @@ impl AdtError {
             Self::InvalidAdbPath { .. } => "invalid_adb_path",
             Self::InvalidDeviceSerial { .. } => "invalid_device_serial",
             Self::InvalidPackageName { .. } => "invalid_package_name",
+            Self::RuleValidation { .. } => "rule_validation",
             Self::DeviceNotFound { .. } => "device_not_found",
             Self::DeviceUnauthorized { .. } => "device_unauthorized",
             Self::DeviceOffline { .. } => "device_offline",
@@ -88,6 +92,9 @@ impl AdtError {
             ),
             Self::InvalidPackageName { .. } => Some(
                 "Provide a valid Android package identifier such as com.example.app or android.",
+            ),
+            Self::RuleValidation { .. } => Some(
+                "Verify the package-rule JSON conforms to data/package-rules/schema.json and includes evidence for verified rules.",
             ),
             Self::DeviceNotFound { .. } => Some(
                 "Refresh the device list and ensure USB debugging is enabled and the cable is connected.",
