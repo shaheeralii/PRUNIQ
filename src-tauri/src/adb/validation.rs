@@ -141,7 +141,7 @@ mod tests {
             "ABC\t123",
             "ABC\n123",
             "ABC\r123",
-            "ABC\0123",
+            "ABC\x00123",
             "ABC\x1b123",
             " leading",
             "trailing ",

@@ -109,7 +109,7 @@ fn validate_rule(rule: &PackageRule, seen_ids: &mut HashSet<String>) -> Result<(
         if rule
             .last_verified_date
             .as_deref()
-            .map_or(true, |d| d.trim().is_empty())
+            .is_none_or(|d| d.trim().is_empty())
         {
             return Err(AdtError::RuleValidation {
                 message: format!("rule '{id}' is marked verified without lastVerifiedDate"),
@@ -118,7 +118,7 @@ fn validate_rule(rule: &PackageRule, seen_ids: &mut HashSet<String>) -> Result<(
         if rule
             .reviewer
             .as_deref()
-            .map_or(true, |r| r.trim().is_empty())
+            .is_none_or(|r| r.trim().is_empty())
         {
             return Err(AdtError::RuleValidation {
                 message: format!("rule '{id}' is marked verified without reviewer"),

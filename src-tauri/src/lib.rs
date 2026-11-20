@@ -17,6 +17,7 @@ use tauri::Manager;
 
 use adb::process_runner::TokioProcessRunner;
 use adb::service::AdbService;
+use core::diagnostics_models::{MemorySnapshot, PerformanceMetrics};
 use core::models::AdbDevice;
 use operations::locks::DeviceLockManager;
 use rules::engine::RuleEngine;
@@ -34,6 +35,10 @@ pub struct SessionCache {
     pub discovered_at: Option<Instant>,
     /// In-memory only mapping from active ADB serial to local random SQLite device UUID.
     pub serial_to_device_id: HashMap<String, String>,
+    /// In-memory session memory snapshots for before/after read-only RAM comparison.
+    pub memory_snapshots: HashMap<String, Vec<MemorySnapshot>>,
+    /// Measured local latency diagnostics per active session serial.
+    pub performance_by_serial: HashMap<String, PerformanceMetrics>,
 }
 
 pub struct AppState {
@@ -100,6 +105,11 @@ pub fn run() {
             commands::history::get_app_settings,
             commands::history::save_app_settings,
             commands::history::export_diagnostics,
+            commands::diagnostics::capture_memory_snapshot,
+            commands::diagnostics::list_memory_snapshots,
+            commands::diagnostics::compare_memory_snapshots,
+            commands::diagnostics::get_storage_diagnostics,
+            commands::diagnostics::get_performance_metrics,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Android Debloating Toolkit");

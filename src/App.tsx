@@ -5,10 +5,18 @@ import { StatusBadge } from "./components/shared/StatusBadge";
 import { AppManagerPanel } from "./features/app-manager/AppManagerPanel";
 import { DeviceInfoPanel } from "./features/device-info/DeviceInfoPanel";
 import { AdbDevicePanel } from "./features/devices/AdbDevicePanel";
+import { DiagnosticsPanel } from "./features/diagnostics/DiagnosticsPanel";
 import { HistoryPanel } from "./features/history/HistoryPanel";
 import { SettingsPanel } from "./features/settings/SettingsPanel";
 import { detectAdb, listDevices, parseAdtError } from "./lib/tauri/adb";
 import { getDeviceCapabilities, getDeviceSpecs } from "./lib/tauri/device";
+import {
+  captureMemorySnapshot,
+  compareMemorySnapshots,
+  getPerformanceMetrics,
+  getStorageDiagnostics,
+  listMemorySnapshots,
+} from "./lib/tauri/diagnostics";
 import {
   clearOperationHistory,
   exportDiagnostics,
@@ -34,6 +42,12 @@ import {
 import styles from "./styles/app.module.css";
 import type { AdbDevice, AdbStatus, AdtErrorPayload } from "./types/adb";
 import type { DeviceCapabilities, DeviceSpecs } from "./types/device";
+import type {
+  MemoryComparison,
+  MemorySnapshot,
+  PerformanceMetrics,
+  StorageDashboard,
+} from "./types/diagnostics";
 import type { AppSettings, DiagnosticBundle } from "./types/history";
 import type {
   BulkOperationPreview,
@@ -53,7 +67,13 @@ import type {
   RuleDatabaseSummary,
 } from "./types/rules";
 
-type ActiveTab = "devices" | "device-info" | "apps" | "history" | "settings";
+type ActiveTab =
+  | "devices"
+  | "device-info"
+  | "apps"
+  | "diagnostics"
+  | "history"
+  | "settings";
 
 const DEFAULT_SETTINGS: AppSettings = {
   customAdbPath: null,
@@ -87,6 +107,16 @@ export function App() {
   const [lastOperationResult, setLastOperationResult] =
     useState<BulkOperationResult | null>(null);
 
+  const [memorySnapshots, setMemorySnapshots] = useState<MemorySnapshot[]>([]);
+  const [memoryComparison, setMemoryComparison] = useState<MemoryComparison | null>(
+    null,
+  );
+  const [storageDashboard, setStorageDashboard] = useState<StorageDashboard | null>(
+    null,
+  );
+  const [performanceMetrics, setPerformanceMetrics] =
+    useState<PerformanceMetrics | null>(null);
+
   const [history, setHistory] = useState<PackageOperationResult[]>([]);
   const [historyStatusFilter, setHistoryStatusFilter] = useState("all");
   const [historySearch, setHistorySearch] = useState("");
@@ -112,6 +142,10 @@ export function App() {
     setInventory(null);
     setRecommendations({});
     setSnapshots({});
+    setMemorySnapshots([]);
+    setMemoryComparison(null);
+    setStorageDashboard(null);
+    setPerformanceMetrics(null);
     setPendingItems([]);
     setOperationPreview(null);
     setLastOperationResult(null);
@@ -162,6 +196,9 @@ export function App() {
       setRuleDbSummary(batch.database);
       setRecommendations(batch.recommendations);
 
+      const perf = await getPerformanceMetrics(serial);
+      setPerformanceMetrics(perf);
+
       if (userId !== null) {
         const snapMap = await getPackageSnapshots(serial, userId);
         setSnapshots(snapMap);
@@ -177,14 +214,18 @@ export function App() {
         `Reading specifications, capabilities, and safety protections for ${serial}...`,
       );
       try {
-        const [specs, caps, prot] = await Promise.all([
+        const [specs, caps, prot, memSnaps, perf] = await Promise.all([
           getDeviceSpecs(serial),
           getDeviceCapabilities(serial),
           getDeviceProtections(serial),
+          listMemorySnapshots(serial),
+          getPerformanceMetrics(serial),
         ]);
         setDeviceSpecs(specs);
         setCapabilities(caps);
         setProtections(prot);
+        setMemorySnapshots(memSnaps);
+        setPerformanceMetrics(perf);
         setSelectedUserId(caps.activeUserId);
         if (caps.activeUserId !== null) {
           const snapMap = await getPackageSnapshots(serial, caps.activeUserId);
@@ -393,6 +434,58 @@ export function App() {
     }
   };
 
+  const handleCaptureMemory = async (label: string) => {
+    if (!selectedSerial) {
+      return;
+    }
+    setError(null);
+    setLoadingMessage(`Capturing read-only memory snapshot '${label}'...`);
+    try {
+      await captureMemorySnapshot(selectedSerial, label);
+      const [snaps, perf] = await Promise.all([
+        listMemorySnapshots(selectedSerial),
+        getPerformanceMetrics(selectedSerial),
+      ]);
+      setMemorySnapshots(snaps);
+      setPerformanceMetrics(perf);
+    } catch (err) {
+      setError(parseAdtError(err));
+    } finally {
+      setLoadingMessage(null);
+    }
+  };
+
+  const handleCompareMemory = async (beforeId: string, afterId: string) => {
+    if (!selectedSerial) {
+      return;
+    }
+    setError(null);
+    try {
+      const cmp = await compareMemorySnapshots(selectedSerial, beforeId, afterId);
+      setMemoryComparison(cmp);
+    } catch (err) {
+      setError(parseAdtError(err));
+    }
+  };
+
+  const handleRefreshStorage = async () => {
+    if (!selectedSerial) {
+      return;
+    }
+    setError(null);
+    setLoadingMessage("Reading storage partitions and /data usage...");
+    try {
+      const dash = await getStorageDiagnostics(selectedSerial);
+      setStorageDashboard(dash);
+      const perf = await getPerformanceMetrics(selectedSerial);
+      setPerformanceMetrics(perf);
+    } catch (err) {
+      setError(parseAdtError(err));
+    } finally {
+      setLoadingMessage(null);
+    }
+  };
+
   const handleReconcileOperation = async (operationId: string) => {
     if (!selectedSerial) {
       return;
@@ -462,7 +555,7 @@ export function App() {
         <div className={styles.titleGroup}>
           <h1 className={styles.title}>Android Debloating Toolkit</h1>
           <StatusBadge tone="neutral">
-            Phase 5 â€” SQLite History, Recovery & Diagnostics
+            Phase 6 â€” Memory & Storage Diagnostics
           </StatusBadge>
         </div>
         <div className={styles.statusBar}>
@@ -511,6 +604,17 @@ export function App() {
         <button
           type="button"
           className={`${styles.tabButton} ${
+            activeTab === "diagnostics" ? styles.tabButtonActive : ""
+          }`}
+          disabled={!selectedSerial}
+          onClick={() => setActiveTab("diagnostics")}
+        >
+          4. Memory & Storage
+          {memorySnapshots.length > 0 ? ` (${memorySnapshots.length})` : ""}
+        </button>
+        <button
+          type="button"
+          className={`${styles.tabButton} ${
             activeTab === "history" ? styles.tabButtonActive : ""
           }`}
           onClick={() => {
@@ -518,7 +622,7 @@ export function App() {
             void refreshHistory();
           }}
         >
-          4. History & Recovery ({history.length}
+          5. History & Recovery ({history.length}
           {uncertainHistoryCount > 0 ? ` Â· ${uncertainHistoryCount} uncertain` : ""})
         </button>
         <button
@@ -528,7 +632,7 @@ export function App() {
           }`}
           onClick={() => setActiveTab("settings")}
         >
-          5. Settings & Diagnostics
+          6. Settings & Diagnostics
         </button>
       </nav>
 
@@ -610,6 +714,20 @@ export function App() {
           }
           onRequestOperations={(items) => void handleRequestOperations(items)}
           onDismissLastResult={() => setLastOperationResult(null)}
+        />
+      )}
+
+      {activeTab === "diagnostics" && (
+        <DiagnosticsPanel
+          selectedSerial={selectedSerial}
+          snapshots={memorySnapshots}
+          comparison={memoryComparison}
+          storageDashboard={storageDashboard}
+          performanceMetrics={performanceMetrics}
+          busy={busy}
+          onCaptureMemory={(label) => void handleCaptureMemory(label)}
+          onCompareSnapshots={(b, a) => void handleCompareMemory(b, a)}
+          onRefreshStorage={() => void handleRefreshStorage()}
         />
       )}
 

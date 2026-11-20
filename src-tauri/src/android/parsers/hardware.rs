@@ -89,8 +89,7 @@ pub fn parse_df_data(stdout: &str) -> StorageInfo {
                 }
             }
             if let (Some(total), Some(used)) = (info.total_kb, info.used_kb) {
-                if total > 0 {
-                    let pct = (used.saturating_mul(100)) / total;
+                if let Some(pct) = used.saturating_mul(100).checked_div(total) {
                     info.use_percent = u8::try_from(pct.min(100)).ok();
                 }
             }
@@ -105,7 +104,6 @@ pub fn parse_df_data(stdout: &str) -> StorageInfo {
         .flat_map(|line| line.split_whitespace())
         .collect();
 
-    // Expect at least: filesystem, total_kb, used_kb, avail_kb, use_pct, mount_point
     if body_tokens.len() >= 6 {
         let len = body_tokens.len();
         let mount = body_tokens[len - 1];

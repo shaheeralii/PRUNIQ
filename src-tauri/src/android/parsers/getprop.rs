@@ -25,7 +25,7 @@ pub fn parse_getprop_all(stdout: &str) -> BTreeMap<String, String> {
     map
 }
 
-pub fn prop_first<'a>(props: &'a BTreeMap<String, String>, keys: &[&str]) -> Option<String> {
+pub fn prop_first(props: &BTreeMap<String, String>, keys: &[&str]) -> Option<String> {
     for key in keys {
         if let Some(val) = props.get(*key) {
             let trimmed = val.trim();

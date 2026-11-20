@@ -65,6 +65,18 @@ pub enum AdbReadOnlyCommand {
     DataStorageDf {
         serial: String,
     },
+    StoragePartitionsDf {
+        serial: String,
+    },
+    DumpsysMeminfo {
+        serial: String,
+    },
+    ProcessList {
+        serial: String,
+    },
+    ProcessListLegacy {
+        serial: String,
+    },
     WindowSize {
         serial: String,
     },
@@ -125,6 +137,10 @@ impl AdbReadOnlyCommand {
             | Self::ReadProcMeminfo { serial }
             | Self::ReadProcCpuinfo { serial }
             | Self::DataStorageDf { serial }
+            | Self::StoragePartitionsDf { serial }
+            | Self::DumpsysMeminfo { serial }
+            | Self::ProcessList { serial }
+            | Self::ProcessListLegacy { serial }
             | Self::WindowSize { serial }
             | Self::WindowDensity { serial }
             | Self::BatteryDumpsys { serial }
@@ -160,6 +176,10 @@ impl AdbReadOnlyCommand {
             Self::ReadProcMeminfo { .. } => "adb shell cat /proc/meminfo",
             Self::ReadProcCpuinfo { .. } => "adb shell cat /proc/cpuinfo",
             Self::DataStorageDf { .. } => "adb shell df -k /data",
+            Self::StoragePartitionsDf { .. } => "adb shell df -k",
+            Self::DumpsysMeminfo { .. } => "adb shell dumpsys meminfo",
+            Self::ProcessList { .. } => "adb shell ps -A",
+            Self::ProcessListLegacy { .. } => "adb shell ps",
             Self::WindowSize { .. } => "adb shell wm size",
             Self::WindowDensity { .. } => "adb shell wm density",
             Self::BatteryDumpsys { .. } => "adb shell dumpsys battery",
@@ -200,6 +220,10 @@ impl AdbReadOnlyCommand {
             Self::ReadProcMeminfo { serial } => Ok(shell_args(serial, &["cat", "/proc/meminfo"])),
             Self::ReadProcCpuinfo { serial } => Ok(shell_args(serial, &["cat", "/proc/cpuinfo"])),
             Self::DataStorageDf { serial } => Ok(shell_args(serial, &["df", "-k", "/data"])),
+            Self::StoragePartitionsDf { serial } => Ok(shell_args(serial, &["df", "-k"])),
+            Self::DumpsysMeminfo { serial } => Ok(shell_args(serial, &["dumpsys", "meminfo"])),
+            Self::ProcessList { serial } => Ok(shell_args(serial, &["ps", "-A"])),
+            Self::ProcessListLegacy { serial } => Ok(shell_args(serial, &["ps"])),
             Self::WindowSize { serial } => Ok(shell_args(serial, &["wm", "size"])),
             Self::WindowDensity { serial } => Ok(shell_args(serial, &["wm", "density"])),
             Self::BatteryDumpsys { serial } => Ok(shell_args(serial, &["dumpsys", "battery"])),
@@ -428,6 +452,34 @@ mod tests {
         assert_eq!(
             dump_cmd.build_args().expect("dumpsys args"),
             vec!["-s", "DEV01", "shell", "dumpsys", "package", "android"]
+        );
+    }
+
+    #[test]
+    fn builds_phase6_read_only_diagnostic_args() {
+        assert_eq!(
+            AdbReadOnlyCommand::DumpsysMeminfo {
+                serial: "DEV01".to_string(),
+            }
+            .build_args()
+            .expect("dumpsys meminfo"),
+            vec!["-s", "DEV01", "shell", "dumpsys", "meminfo"]
+        );
+        assert_eq!(
+            AdbReadOnlyCommand::ProcessList {
+                serial: "DEV01".to_string(),
+            }
+            .build_args()
+            .expect("ps -A"),
+            vec!["-s", "DEV01", "shell", "ps", "-A"]
+        );
+        assert_eq!(
+            AdbReadOnlyCommand::StoragePartitionsDf {
+                serial: "DEV01".to_string(),
+            }
+            .build_args()
+            .expect("df -k"),
+            vec!["-s", "DEV01", "shell", "df", "-k"]
         );
     }
 
